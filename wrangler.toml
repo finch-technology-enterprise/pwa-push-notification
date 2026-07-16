@@ -18,6 +18,14 @@ class_name = "TopicDO"
 tag = "v1"
 new_classes = ["TopicDO"]
 
+[[r2_buckets]]
+binding = "ATTACHMENTS"
+bucket_name = "pwa-push-attachments"
+
+send_email = [
+  { name = "EMAIL" }
+]
+
 [vars]
 BASE_URL = "https://ntfy-cf-api.finchtech.my.workers.dev"
 ENABLE_SIGNUP = "true"
@@ -28,3 +36,7 @@ VISITOR_SUBSCRIPTION_LIMIT = "30"
 VISITOR_MESSAGE_DAILY_LIMIT = "0"
 MESSAGE_SIZE_LIMIT = "4096"
 KEEPALIVE_INTERVAL = "45"
+ATTACHMENT_FILE_SIZE_LIMIT = "10485760"
+ATTACHMENT_TOTAL_SIZE_LIMIT = "52428800"
+SEND_EMAIL_FROM = "notify@finchtech.my"
+SEND_EMAIL_FROM_NAME = "ntfy"

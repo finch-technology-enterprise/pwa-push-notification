@@ -6,6 +6,7 @@ import {
   generateId, nowUnix,
 } from '../middleware'
 import { initDatabase } from '../db'
+import { sendEmail } from './email'
 
 const app = new Hono<Env>()
 
@@ -405,15 +406,50 @@ app.delete('/account/email', async (c) => {
 })
 
 app.post('/account/email/verify', async (c) => {
-  const { DB } = env(c)
+  const { DB, EMAIL, BASE_URL } = env(c)
   await initDatabase(DB)
-  await requireAuth(c)
+  const auth = await requireAuth(c)
+
+  const user = await DB.prepare(
+    'SELECT user_name FROM user WHERE id = ? AND deleted IS NULL'
+  ).bind(auth.userId).first<{ user_name: string }>()
+
+  const emails = await DB.prepare(
+    'SELECT email FROM user_email WHERE user_id = ?'
+  ).bind(auth.userId).all()
+
+  const emailAddresses = (emails.results || []).map((r: any) => r.email)
+  if (emailAddresses.length === 0) {
+    return c.json({ code: 40001, http_code: 400, error: 'No email addresses on file', link: 'https://ntfy.sh/docs' }, 400)
+  }
+
+  const rawToken = await generateToken()
+  const now = nowUnix()
+  const expires = now + 3600
+
+  const tokenHashBytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rawToken))
+  const tokenHashHex = Array.from(new Uint8Array(tokenHashBytes)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+  await DB.prepare(
+    'INSERT INTO user_magic_link (token_hash, kind, user_id, email, expires, created) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(tokenHashHex, 'email-verify', auth.userId, emailAddresses[0], expires, now).run()
+
+  const verifyUrl = `${BASE_URL}/app/verify?token=${rawToken}`
+  const userName = user?.user_name || 'User'
+
+  await sendEmail(EMAIL, {
+    to: emailAddresses[0],
+    from: { email: 'notify@finchtech.my', name: 'ntfy' },
+    subject: 'Verify your email address',
+    text: `Hi ${userName},\n\nPlease verify your email address by clicking this link:\n${verifyUrl}\n\nThis link expires in 1 hour.\n\n- ntfy`,
+    html: `<h2>Verify your email</h2><p>Hi ${userName},</p><p>Please verify your email address by clicking the button below:</p><p><a href="${verifyUrl}" style="display:inline-block;padding:12px 24px;background:#088f8f;color:#fff;text-decoration:none;border-radius:4px">Verify Email</a></p><p>This link expires in 1 hour.</p>`,
+  })
 
   return c.json({ success: true })
 })
 
 app.post('/account/password/reset/request', async (c) => {
-  const { DB } = env(c)
+  const { DB, EMAIL, BASE_URL } = env(c)
   await initDatabase(DB)
 
   const body = await c.req.json<{ email: string }>()
@@ -424,8 +460,8 @@ app.post('/account/password/reset/request', async (c) => {
   }
 
   const userEmail = await DB.prepare(
-    'SELECT u.id FROM user u JOIN user_email e ON e.user_id = u.id WHERE e.email = ? AND u.deleted IS NULL'
-  ).bind(body.email).first<{ id: string }>()
+    'SELECT u.id, u.user_name FROM user u JOIN user_email e ON e.user_id = u.id WHERE e.email = ? AND u.deleted IS NULL'
+  ).bind(body.email).first<{ id: string; user_name: string }>()
 
   if (userEmail) {
     const rawToken = await generateToken()
@@ -438,6 +474,16 @@ app.post('/account/password/reset/request', async (c) => {
     await DB.prepare(
       'INSERT INTO user_magic_link (token_hash, kind, user_id, email, expires, created) VALUES (?, ?, ?, ?, ?, ?)'
     ).bind(tokenHashHex, 'password-reset', userEmail.id, body.email, expires, now).run()
+
+    const resetUrl = `${BASE_URL}/app/password-reset?token=${rawToken}`
+
+    await sendEmail(EMAIL, {
+      to: body.email,
+      from: { email: 'notify@finchtech.my', name: 'ntfy' },
+      subject: 'Reset your password',
+      text: `Hi ${userEmail.user_name},\n\nYou requested a password reset. Click this link to reset your password:\n${resetUrl}\n\nThis link expires in 1 hour.\nIf you didn't request this, you can ignore this email.\n\n- ntfy`,
+      html: `<h2>Password Reset</h2><p>Hi ${userEmail.user_name},</p><p>You requested a password reset. Click the button below to reset your password:</p><p><a href="${resetUrl}" style="display:inline-block;padding:12px 24px;background:#088f8f;color:#fff;text-decoration:none;border-radius:4px">Reset Password</a></p><p>This link expires in 1 hour.</p><p>If you didn't request this, you can ignore this email.</p>`,
+    })
   }
 
   return c.json({ success: true })

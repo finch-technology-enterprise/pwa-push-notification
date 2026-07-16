@@ -16,6 +16,7 @@ app.get('/:topic/sse', handleSubscribe)
 app.get('/:topic/raw', handleSubscribe)
 app.get('/:topic/ws', handleSubscribe)
 app.get('/:topic/auth', handleAuth)
+app.get('/:topic', handlePublish)
 
 async function handlePublish(c: any): Promise<Response> {
   const topic = c.req.param('topic') as string
@@ -34,6 +35,11 @@ async function handlePublish(c: any): Promise<Response> {
 
   const auth = await authenticate(c)
 
+  const { read, write } = await checkTopicAccess(DB, auth.userId, topic)
+  if (!write) {
+    return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://ntfy.sh/docs' }, 403)
+  }
+
   const dailyLimit = parseInt(VISITOR_MESSAGE_DAILY_LIMIT || '0', 10)
   if (dailyLimit > 0 && !auth.authenticated) {
     const dayStart = Math.floor(Date.now() / 86400000) * 86400
@@ -45,10 +51,43 @@ async function handlePublish(c: any): Promise<Response> {
     }
   }
 
-  const body = await c.req.text().catch(() => '')
+  const body = (await c.req.text().catch(() => '')) || c.req.query('message') || ''
   const msgSizeLimit = parseInt(MESSAGE_SIZE_LIMIT || '4096', 10)
-  if (body.length > msgSizeLimit) {
-    return c.json({ code: 40001, http_code: 400, error: `Message exceeds ${msgSizeLimit} bytes`, link: 'https://ntfy.sh/docs' }, 400)
+  const xFilename = c.req.header('X-Filename') || ''
+
+  let attachmentName = ''
+  let attachmentType = ''
+  let attachmentSize = 0
+  let attachmentExpires = 0
+  let attachmentUrl = ''
+  let msgBody = body
+  const { BASE_URL, ATTACHMENTS, ATTACHMENT_FILE_SIZE_LIMIT } = env(c)
+
+  if (xFilename || body.length > msgSizeLimit) {
+    const attachId = generateId()
+    const fname = xFilename || `message-${attachId}.txt`
+    const bodyBytes = new TextEncoder().encode(body)
+    const attachContentType = c.req.header('Content-Type') || 'text/plain'
+
+    const fileSizeLimit = parseInt(ATTACHMENT_FILE_SIZE_LIMIT || '10485760', 10)
+    if (bodyBytes.length > fileSizeLimit) {
+      return c.json({ code: 40001, http_code: 400, error: `Message exceeds ${fileSizeLimit} bytes`, link: 'https://ntfy.sh/docs' }, 400)
+    }
+
+    const expireTime = nowUnix()
+    await ATTACHMENTS.put(`attachments/${attachId}/${fname}`, bodyBytes, {
+      customMetadata: { topic, contentType: attachContentType, userId: auth.userId },
+    })
+
+    attachmentName = fname
+    attachmentType = attachContentType
+    attachmentSize = bodyBytes.length
+    attachmentExpires = expireTime + 86400 * 7
+    attachmentUrl = `${BASE_URL}/file/${attachId}/${encodeURIComponent(fname)}`
+
+    if (xFilename) {
+      msgBody = ''
+    }
   }
 
   const id = generateId()
@@ -68,20 +107,31 @@ async function handlePublish(c: any): Promise<Response> {
     `INSERT INTO messages (id, sequence_id, time, event, expires, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user_id, content_type, encoding, published)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
-    id, seqId, now, 'message', 0, topic, body || '', title, priority, tags.join(','),
-    click, icon, actions, '', '', 0, 0, '', auth.authenticated ? auth.username : '', auth.userId, contentType, encoding, 1
+    id, seqId, now, 'message', 0, topic, msgBody || '', title, priority, tags.join(','),
+    click, icon, actions, attachmentName, attachmentType, attachmentSize, attachmentExpires, attachmentUrl,
+    auth.authenticated ? auth.username : '', auth.userId, contentType, encoding, 1
   ).run()
 
   await incrementMessages(DB)
 
   const publishMsg: PublishMessage = {
     id, sequence_id: seqId, time: now, event: 'message', topic,
-    title: title || undefined, message: body || undefined,
+    title: title || undefined, message: msgBody || undefined,
     priority: priority as PublishMessage['priority'],
     tags: tags.length > 0 ? tags : undefined,
     click: click || undefined, icon: icon || undefined,
     actions: actions !== '[]' ? JSON.parse(actions) : undefined,
     content_type: contentType || undefined, encoding: encoding || undefined,
+  }
+
+  if (attachmentUrl) {
+    publishMsg.attachment = {
+      name: attachmentName,
+      type: attachmentType || undefined,
+      size: attachmentSize,
+      expires: attachmentExpires,
+      url: attachmentUrl,
+    }
   }
 
   try {
@@ -103,19 +153,9 @@ async function handlePublish(c: any): Promise<Response> {
 }
 
 async function handleSubscribe(c: any): Promise<Response> {
-  const topic = c.req.param('topic') as string
+  const topicParam = c.req.param('topic') as string
   const { DB, TOPIC_DO, DISALLOWED_TOPICS } = env(c)
   await initDatabase(DB)
-
-  if (!topic || !TOPIC_REGEX.test(topic)) {
-    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400) as Response
-  }
-
-  const disallowed = (DISALLOWED_TOPICS || '').split(',').map((s: string) => s.trim()).filter(Boolean)
-  if (disallowed.length === 0) disallowed.push(...DISALLOWED_TOPICS_DEFAULT)
-  if (disallowed.includes(topic)) {
-    return c.json({ code: 40001, http_code: 400, error: 'Disallowed topic', link: 'https://ntfy.sh/docs' }, 400) as Response
-  }
 
   const url = new URL(c.req.url)
   const path = url.pathname
@@ -130,18 +170,177 @@ async function handleSubscribe(c: any): Promise<Response> {
   const since = c.req.query('since') || ''
   const poll = c.req.query('poll') || ''
 
-  const doId = TOPIC_DO.idFromName(topic)
-  const stub = TOPIC_DO.get(doId)
+  const topics = topicParam.split(',').map((t: string) => t.trim()).filter(Boolean)
 
-  const doUrl = `http://do/${suffix}?topic=${topic}&since=${since}&poll=${poll}`
-
-  if (suffix === 'ws') {
-    const doResp = await stub.fetch(doUrl, c.req.raw)
-    return doResp
+  if (topics.length === 0) {
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400) as Response
   }
 
-  const doResp = await stub.fetch(doUrl)
-  return doResp
+  for (const topic of topics) {
+    if (!TOPIC_REGEX.test(topic)) {
+      return c.json({ code: 40001, http_code: 400, error: `Invalid topic: ${topic}`, link: 'https://ntfy.sh/docs' }, 400) as Response
+    }
+  }
+
+  const disallowed = (DISALLOWED_TOPICS || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  if (disallowed.length === 0) disallowed.push(...DISALLOWED_TOPICS_DEFAULT)
+  for (const topic of topics) {
+    if (disallowed.includes(topic)) {
+      return c.json({ code: 40001, http_code: 400, error: `Disallowed topic: ${topic}`, link: 'https://ntfy.sh/docs' }, 400) as Response
+    }
+  }
+
+  if (topics.length === 1) {
+    const topic = topics[0]
+    const doId = TOPIC_DO.idFromName(topic)
+    const stub = TOPIC_DO.get(doId)
+
+    const doUrl = `http://do/${suffix}?topic=${topic}&since=${since}&poll=${poll}`
+
+    if (suffix === 'ws') {
+      return await stub.fetch(doUrl, c.req.raw)
+    }
+
+    return await stub.fetch(doUrl)
+  }
+
+  return handleMultiTopicSubscribe(c, DB, TOPIC_DO, topics, suffix, since, poll)
+}
+
+async function handleMultiTopicSubscribe(
+  c: any,
+  db: D1Database,
+  topicDo: DurableObjectNamespace,
+  topics: string[],
+  suffix: string,
+  since: string,
+  poll: string,
+): Promise<Response> {
+  if (suffix === 'ws') {
+    return c.json({ code: 40001, http_code: 400, error: 'WebSocket multi-topic not supported', link: 'https://ntfy.sh/docs' }, 400) as Response
+  }
+
+  const filterPriority = c.req.query('priority') || ''
+  const filterTags = c.req.query('tags') || ''
+  const filterMinLt = parseInt(c.req.query('min_lt') || '0', 10)
+  const filterMinLte = parseInt(c.req.query('min_lte') || '0', 10)
+
+  const { readable, writable } = new TransformStream<string>()
+  const writer = writable.getWriter()
+
+  const sendPastMessages = async () => {
+    const sinceTime = since && since !== 'all' ? parseInt(since, 10) : 0
+    const placeholders = topics.map(() => '?').join(',')
+    let query = `SELECT * FROM messages WHERE topic IN (${placeholders})`
+    const params: unknown[] = [...topics]
+
+    if (sinceTime > 0) {
+      query += ' AND time > ?'
+      params.push(sinceTime)
+    }
+
+    if (filterPriority) {
+      query += ' AND priority = ?'
+      params.push(parseInt(filterPriority, 10))
+    }
+
+    if (filterTags) {
+      const tagList = filterTags.split(',').map((t: string) => t.trim()).filter(Boolean)
+      for (const tag of tagList) {
+        query += ' AND tags LIKE ?'
+        params.push(`%${tag}%`)
+      }
+    }
+
+    if (filterMinLt > 0) {
+      query += ' AND time < ?'
+      params.push(filterMinLt)
+    } else if (filterMinLte > 0) {
+      query += ' AND time <= ?'
+      params.push(filterMinLte)
+    }
+
+    query += ' ORDER BY time ASC LIMIT 1000'
+
+    const stmt = db.prepare(query).bind(...params)
+    const result = await stmt.all()
+
+    for (const row of (result.results || []) as any[]) {
+      const msg = formatDbRow(row)
+      if (suffix === 'sse') {
+        const event = msg.event === 'message' ? 'message' : msg.event
+        writer.write(`event: ${event}\ndata: ${JSON.stringify(msg)}\n\n`).catch(() => {})
+      } else if (suffix === 'raw') {
+        writer.write((msg.message || '') + '\n').catch(() => {})
+      } else {
+        writer.write(JSON.stringify(msg) + '\n').catch(() => {})
+      }
+    }
+  }
+
+  await sendPastMessages()
+
+  if (poll) {
+    writer.close().catch(() => {})
+    return new Response(readable, {
+      headers: {
+        'Content-Type': suffix === 'sse' ? 'text/event-stream' : suffix === 'raw' ? 'text/plain' : 'application/x-ndjson',
+        'Cache-Control': 'no-store',
+        'Connection': 'keep-alive',
+      },
+    })
+  }
+
+  const abortController = new AbortController()
+
+  const livePromises = topics.map(async (topic) => {
+    const doId = topicDo.idFromName(topic)
+    const stub = topicDo.get(doId)
+    const doUrl = `http://do/${suffix}?topic=${topic}&since=all`
+    try {
+      const resp = await stub.fetch(doUrl, { signal: abortController.signal })
+      const reader = resp.body?.getReader()
+      if (!reader) return
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const text = decoder.decode(value, { stream: true })
+        try {
+          writer.write(text)
+        } catch {
+          break
+        }
+      }
+    } catch {}
+  })
+
+  const keepalive = setInterval(() => {
+    const ka = suffix === 'sse'
+      ? `event: keepalive\ndata: {"event":"keepalive","topic":"${topics[0]}","time":${Date.now()}}\n\n`
+      : `{"event":"keepalive","topic":"${topics[0]}","time":${Date.now()}}\n`
+    writer.write(ka).catch(() => {})
+  }, 30000)
+
+  c.req.raw?.signal?.addEventListener('abort', () => {
+    abortController.abort()
+    clearInterval(keepalive)
+    writer.close().catch(() => {})
+  })
+
+  Promise.all(livePromises).finally(() => {
+    clearInterval(keepalive)
+    writer.close().catch(() => {})
+  })
+
+  return new Response(readable, {
+    headers: {
+      'Content-Type': suffix === 'sse' ? 'text/event-stream' : suffix === 'raw' ? 'text/plain' : 'application/x-ndjson',
+      'Cache-Control': 'no-store',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+  })
 }
 
 async function handleAuth(c: any): Promise<Response> {
@@ -154,16 +353,49 @@ async function handleAuth(c: any): Promise<Response> {
   }
 
   const auth = await authenticate(c)
-  const accessStmt = DB.prepare(
-    'SELECT read_access, write_access FROM user_access WHERE user_id = ? AND topic = ?'
-  ).bind(auth.userId, topic)
-  const access = await accessStmt.first() as { read_access: number; write_access: number } | null
+  const { read, write } = await checkTopicAccess(DB, auth.userId, topic)
 
   return c.json({
     topic, authenticated: auth.authenticated, user: auth.username,
-    read: access ? access.read_access === 1 : true,
-    write: access ? access.write_access === 1 : true,
+    read, write,
   }) as Response
+}
+
+async function checkTopicAccess(
+  db: D1Database,
+  userId: string,
+  topic: string,
+): Promise<{ read: boolean; write: boolean }> {
+  const exact = await db.prepare(
+    'SELECT read_access, write_access FROM user_access WHERE user_id = ? AND topic = ?'
+  ).bind(userId, topic).first() as { read_access: number; write_access: number } | null
+
+  if (exact) {
+    return { read: exact.read_access === 1, write: exact.write_access === 1 }
+  }
+
+  const patterns = await db.prepare(
+    'SELECT topic, read_access, write_access FROM user_access WHERE user_id = ? AND topic LIKE ?'
+  ).bind(userId, '%\*%').all()
+
+  let read = true
+  let write = true
+
+  for (const row of (patterns.results || []) as any[]) {
+    const pattern = row.topic as string
+    if (wildcardMatch(pattern, topic)) {
+      read = row.read_access === 1
+      write = row.write_access === 1
+      break
+    }
+  }
+
+  return { read, write }
+}
+
+function wildcardMatch(pattern: string, topic: string): boolean {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
+  return new RegExp(`^${escaped}$`, 'i').test(topic)
 }
 
 async function sendWebPushNotifications(
@@ -466,13 +698,44 @@ function base64UrlToBin(str: string): Uint8Array {
 }
 
 function formatMessageResponse(msg: PublishMessage): Record<string, unknown> {
-  return {
+  const resp: Record<string, unknown> = {
     id: msg.id, time: msg.time, event: msg.event, topic: msg.topic,
     message: msg.message || null, title: msg.title || null,
     priority: msg.priority || 3, tags: msg.tags || [],
     click: msg.click || null, icon: msg.icon || null,
     actions: msg.actions || [],
   }
+  if (msg.attachment) {
+    resp.attachment = msg.attachment
+  }
+  return resp
+}
+
+function formatDbRow(row: any): PublishMessage {
+  const msg: PublishMessage = {
+    id: row.id,
+    sequence_id: row.sequence_id,
+    time: row.time,
+    event: row.event,
+    topic: row.topic,
+    message: row.message || undefined,
+    title: row.title || undefined,
+    priority: row.priority as PublishMessage['priority'],
+    tags: row.tags ? row.tags.split(',').filter((t: string) => t) : undefined,
+    click: row.click || undefined,
+    icon: row.icon || undefined,
+    actions: row.actions && row.actions !== '[]' ? JSON.parse(row.actions) : undefined,
+  }
+  if (row.attachment_url) {
+    msg.attachment = {
+      name: row.attachment_name,
+      type: row.attachment_type || undefined,
+      size: row.attachment_size,
+      expires: row.attachment_expires,
+      url: row.attachment_url,
+    }
+  }
+  return msg
 }
 
 export { app as topicRoutes }

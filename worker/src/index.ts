@@ -10,11 +10,14 @@ import { webpushRoutes } from './routes/webpush'
 import { accountRoutes } from './routes/account'
 import { adminRoutes } from './routes/admin'
 import { topicRoutes } from './routes/topic'
+import { attachmentRoutes } from './routes/attachment'
 
 export type Env = {
   Bindings: {
     DB: D1Database
     TOPIC_DO: DurableObjectNamespace
+    ATTACHMENTS: R2Bucket
+    EMAIL: SendEmail
     BASE_URL: string
     ENABLE_SIGNUP?: string
     ENABLE_LOGIN?: string
@@ -26,6 +29,8 @@ export type Env = {
     VISITOR_MESSAGE_DAILY_LIMIT?: string
     MESSAGE_SIZE_LIMIT?: string
     KEEPALIVE_INTERVAL?: string
+    ATTACHMENT_FILE_SIZE_LIMIT?: string
+    ATTACHMENT_TOTAL_SIZE_LIMIT?: string
   }
 }
 
@@ -41,6 +46,7 @@ app.route('/v1', metricsRoutes)
 app.route('/v1', webpushRoutes)
 app.route('/v1', accountRoutes)
 app.route('/v1', adminRoutes)
+app.route('/', attachmentRoutes)
 app.route('/', topicRoutes)
 
 app.notFound((c) => c.json({
