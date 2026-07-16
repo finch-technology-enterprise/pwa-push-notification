@@ -50,27 +50,28 @@ app.route('/', attachmentRoutes)
 app.route('/', topicRoutes)
 
 // Wrap the fetch handler so that non-API requests fall through to the static assets (frontend SPA).
-// With run_worker_first = true, ALL requests reach the Worker; we try Hono first, then ASSETS.
+// With run_worker_first = true, ALL requests reach the Worker; we try assets first for non-API
+// GET requests, then let Hono match API/topic routes.
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // Let Hono try to match an API route first
-    const response = await app.fetch(request, env, ctx)
-    // Hono's notFound handler returns a JSON 404 for unmatched routes.
-    // When that happens, serve the static assets (frontend SPA) instead.
-    if (response.status === 404) {
-      const contentType = response.headers.get('content-type') || ''
-      if (contentType.includes('application/json')) {
-        // This was Hono's JSON 404 — try the frontend
-        try {
-          const assets = (env as any).ASSETS as Fetcher
-          return await assets.fetch(request)
-        } catch {
-          // ASSETS.fetch may throw if the request can't be served (e.g. non-GET)
-          return response
+    const url = new URL(request.url)
+
+    // For GET requests to non-API paths, try static assets first so the SPA handles its own routes.
+    // Falls through to Hono if the asset doesn't exist (404).
+    if (request.method === 'GET' && !url.pathname.startsWith('/v1/')) {
+      try {
+        const assets = (env as any).ASSETS as Fetcher
+        const assetResponse = await assets.fetch(request)
+        if (assetResponse.status !== 404) {
+          return assetResponse
         }
+      } catch {
+        // ASSETS.fetch may throw on methods it can't serve
       }
     }
-    return response
+
+    // Let Hono try to match an API or topic route
+    return await app.fetch(request, env, ctx)
   },
 }
 
