@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "serve": "vite preview",
+    "deploy": "wrangler pages deploy build --project-name ntfy-pwa-push --branch main",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "lint": "echo ok",
@@ -46,7 +47,8 @@
     "prettier": "^3.9.4",
     "vite": "^8.0.16",
     "vite-plugin-pwa": "^1.0.0",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "wrangler": "^4.0.0"
   },
   "browserslist": {
     "production": [
