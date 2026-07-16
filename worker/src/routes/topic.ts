@@ -93,14 +93,14 @@ async function handlePublish(c: any): Promise<Response> {
   const id = generateId()
   const now = nowUnix()
   const seqId = generateSequenceId()
-  const title = c.req.header('X-Title') || ''
-  const priority = Math.max(1, Math.min(5, parseInt(c.req.header('X-Priority') || '3', 10)))
-  const tags = parseTags(c.req.header('X-Tags') || '')
-  const click = c.req.header('X-Click') || ''
-  const icon = c.req.header('X-Icon') || ''
-  const actions = parseActions(c.req.header('X-Actions') || '[]')
-  const sendAs = c.req.header('X-Send-As') || ''
-  const encoding = c.req.header('X-Encoding') || ''
+  const title = readParam(c, 'X-Title', 'Title') || ''
+  const priority = Math.max(1, Math.min(5, parseInt(readParam(c, 'X-Priority', 'Priority') || '3', 10)))
+  const tags = parseTags(readParam(c, 'X-Tags', 'Tags') || '')
+  const click = readParam(c, 'X-Click', 'Click') || ''
+  const icon = readParam(c, 'X-Icon', 'Icon') || ''
+  const actions = parseActions(readParam(c, 'X-Actions', 'Actions') || '[]')
+  const sendAs = readParam(c, 'X-Send-As', 'Send-As') || ''
+  const encoding = readParam(c, 'X-Encoding', 'Encoding') || ''
   const contentType = c.req.header('Content-Type') || ''
 
   await DB.prepare(
@@ -736,6 +736,16 @@ function formatDbRow(row: any): PublishMessage {
     }
   }
   return msg
+}
+
+function readParam(c: any, ...names: string[]): string | null {
+  for (const name of names) {
+    const h = c.req.header(name)
+    if (h) return h
+    const q = c.req.query(name.toLowerCase())
+    if (q) return q
+  }
+  return null
 }
 
 export { app as topicRoutes }
