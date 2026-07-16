@@ -204,7 +204,12 @@ export interface DbToken {
 }
 
 export async function initDatabase(db: D1Database): Promise<void> {
-  const existing = await db.prepare("SELECT version FROM schema_version WHERE store = 'main'").first<{ version: number }>()
+  let existing: { version: number } | null = null
+  try {
+    existing = await db.prepare("SELECT version FROM schema_version WHERE store = 'main'").first<{ version: number }>()
+  } catch {
+    // schema_version table doesn't exist yet — proceed to create all tables
+  }
   if (!existing) {
     const statements = SCHEMA_SQL.split(';').filter(s => s.trim().length > 0)
     for (const stmt of statements) {
