@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#317f6f" />
+    <meta name="description" content="ntfy - send push notifications to your phone or desktop" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="ntfy" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="ntfy" />
+    <meta name="msapplication-TileColor" content="#317f6f" />
+    <meta name="msapplication-tap-highlight" content="no" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="apple-touch-icon" href="/static/images/pwa-192x192.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/images/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/images/favicon-16x16.png" />
+    <link rel="mask-icon" href="/static/images/safari-pinned-tab.svg" color="#317f6f" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/static/css/fonts.css" />
+    <script src="/config.js"></script>
+    <title>ntfy</title>
+    <style>
+      html, body, #root {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        background: #1a1a1a;
+      }
+      #splash {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        background: linear-gradient(135deg, #317f6f 0%, #2b6e62 50%, #1a1a1a 100%);
+        color: #fff;
+        z-index: 9999;
+        transition: opacity 0.5s ease-out;
+      }
+      #splash.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #splash svg {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 16px;
+      }
+      #splash h1 {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 28px;
+        font-weight: 700;
+        margin: 0;
+        letter-spacing: 2px;
+      }
+      #splash p {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        opacity: 0.7;
+        margin: 8px 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="splash">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.9 22 12 22ZM18 16V11C18 7.93 16.36 5.36 13.5 4.68V4C13.5 3.17 12.83 2.5 12 2.5C11.17 2.5 10.5 3.17 10.5 4V4.68C7.63 5.36 6 7.92 6 11V16L4 18V19H20V18L18 16Z" fill="white"/>
+      </svg>
+      <h1>ntfy</h1>
+      <p>Loading…</p>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>
