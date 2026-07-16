@@ -2,7 +2,6 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { secureHeaders } from 'hono/secure-headers'
-import { env } from 'hono/adapter'
 import { healthRoutes } from './routes/health'
 import { configRoutes } from './routes/config'
 import { metricsRoutes } from './routes/metrics'
@@ -18,6 +17,7 @@ export type Env = {
     TOPIC_DO: DurableObjectNamespace
     ATTACHMENTS: R2Bucket
     EMAIL: SendEmail
+    ASSETS: Fetcher  // Static assets binding for frontend
     BASE_URL: string
     ENABLE_SIGNUP?: string
     ENABLE_LOGIN?: string
@@ -49,13 +49,29 @@ app.route('/v1', adminRoutes)
 app.route('/', attachmentRoutes)
 app.route('/', topicRoutes)
 
-app.notFound((c) => c.json({
-  code: 40401,
-  http_code: 404,
-  error: 'Not found',
-  link: 'https://ntfy.sh/docs',
-}, 404))
-
-export default app
+// Wrap the fetch handler so that non-API requests fall through to the static assets (frontend SPA).
+// With run_worker_first = true, ALL requests reach the Worker; we try Hono first, then ASSETS.
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // Let Hono try to match an API route first
+    const response = await app.fetch(request, env, ctx)
+    // Hono's notFound handler returns a JSON 404 for unmatched routes.
+    // When that happens, serve the static assets (frontend SPA) instead.
+    if (response.status === 404) {
+      const contentType = response.headers.get('content-type') || ''
+      if (contentType.includes('application/json')) {
+        // This was Hono's JSON 404 — try the frontend
+        try {
+          const assets = (env as any).ASSETS as Fetcher
+          return await assets.fetch(request)
+        } catch {
+          // ASSETS.fetch may throw if the request can't be served (e.g. non-GET)
+          return response
+        }
+      }
+    }
+    return response
+  },
+}
 
 export { TopicDO } from './do/topic'
