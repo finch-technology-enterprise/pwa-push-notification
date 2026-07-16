@@ -94,7 +94,8 @@ async function handlePublish(c: any): Promise<Response> {
   } catch {}
 
   try {
-    await sendWebPushNotifications(DB, topic, publishMsg)
+    const { WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY } = env(c)
+    await sendWebPushNotifications(DB, topic, publishMsg, WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY)
   } catch {}
 
   const resp = formatMessageResponse(publishMsg)
@@ -168,7 +169,9 @@ async function handleAuth(c: any): Promise<Response> {
 async function sendWebPushNotifications(
   db: D1Database,
   topic: string,
-  msg: PublishMessage
+  msg: PublishMessage,
+  vapidPublicKey?: string,
+  vapidPrivateKey?: string
 ): Promise<void> {
   const subs = await db.prepare(
     `SELECT s.endpoint, s.key_auth, s.key_p256dh
@@ -189,18 +192,141 @@ async function sendWebPushNotifications(
 
       const ciphertext = await webPushEncrypt(payload, keyP256dh, keyAuth)
 
-      await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Content-Encoding': 'aes128gcm',
-          'TTL': '86400',
-        },
-        body: ciphertext,
-      })
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/octet-stream',
+        'Content-Encoding': 'aes128gcm',
+        'TTL': '86400',
+      }
+
+      if (vapidPublicKey && vapidPrivateKey) {
+        const audience = new URL(endpoint).origin
+        const vapidAuth = await generateVapidAuthorization(
+          audience,
+          'mailto:admin@finchtech.my',
+          vapidPublicKey,
+          vapidPrivateKey,
+        )
+        headers['Authorization'] = vapidAuth
+      }
+
+      await fetch(endpoint, { method: 'POST', headers, body: ciphertext })
     } catch {
     }
   }
+}
+
+async function generateVapidAuthorization(
+  audience: string,
+  subject: string,
+  publicKey: string,
+  privateKey: string,
+): Promise<string> {
+  const header = { typ: 'JWT', alg: 'ES256' }
+  const now = Math.floor(Date.now() / 1000)
+  const payload = { sub: subject, aud: audience, exp: now + 43200 }
+
+  const headerB64 = base64UrlEncodeStr(JSON.stringify(header))
+  const payloadB64 = base64UrlEncodeStr(JSON.stringify(payload))
+  const signingInput = `${headerB64}.${payloadB64}`
+  const signature = await signEcdsaJwt(signingInput, publicKey, privateKey)
+  const jwt = `${signingInput}.${signature}`
+
+  return `vapid t=${jwt}, k=${publicKey}`
+}
+
+async function signEcdsaJwt(
+  input: string,
+  publicKeyB64: string,
+  privateKeyB64: string,
+): Promise<string> {
+  const pubBin = base64UrlToBin(publicKeyB64)
+  const privBin = base64UrlToBin(privateKeyB64)
+
+  const x = pubBin.slice(1, 33)
+  const y = pubBin.slice(33, 65)
+
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    {
+      kty: 'EC',
+      crv: 'P-256',
+      d: binToBase64Url(privBin),
+      x: binToBase64Url(x),
+      y: binToBase64Url(y),
+    },
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign'],
+  )
+
+  const derSig = await crypto.subtle.sign(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    key,
+    new TextEncoder().encode(input),
+  )
+
+  const rawSig = derToRaw64(new Uint8Array(derSig))
+  return binToBase64Url(rawSig)
+}
+
+function derToRaw64(der: Uint8Array): Uint8Array {
+  if (der[0] !== 0x30 || der.length < 8) return der
+
+  let offset = 2
+  if ((der[1]! & 0x80) !== 0) {
+    offset += der[1]! & 0x7f
+  }
+
+  if (der[offset] !== 0x02) return der
+  offset++
+
+  const rLen = der[offset]!
+  offset++
+  let rStart = offset
+  const rAdj = rLen > 32 ? 1 : 0
+  if (rAdj) rStart++
+  const r = der.slice(rStart, rStart + 32)
+  offset = rStart + rLen - rAdj
+
+  if (der[offset] !== 0x02) return der
+  offset++
+
+  const sLen = der[offset]!
+  offset++
+  let sStart = offset
+  const sAdj = sLen > 32 ? 1 : 0
+  if (sAdj) sStart++
+  const s = der.slice(sStart, sStart + 32)
+  offset = sStart + sLen - sAdj
+
+  const raw = new Uint8Array(64)
+  raw.set(pad32(r), 0)
+  raw.set(pad32(s), 32)
+  return raw
+}
+
+function pad32(buf: Uint8Array): Uint8Array {
+  if (buf.length === 32) return buf
+  const padded = new Uint8Array(32)
+  padded.set(buf, 32 - buf.length)
+  return padded
+}
+
+function base64UrlEncodeStr(str: string): string {
+  const bytes = new TextEncoder().encode(str)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!)
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function binToBase64Url(bin: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bin.length; i++) {
+    binary += String.fromCharCode(bin[i]!)
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 async function webPushEncrypt(
