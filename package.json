@@ -1,0 +1,37 @@
+{
+  "name": "ntfy-cf",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:worker\" \"npm run dev:web\"",
+    "dev:worker": "npm run dev -w worker",
+    "dev:web": "npm run dev -w web",
+    "build": "npm run build:worker && npm run build:web",
+    "build:worker": "npm run build -w worker",
+    "build:web": "npm run build -w web",
+    "deploy": "npm run deploy:worker && npm run deploy:web",
+    "deploy:worker": "npm run deploy -w worker",
+    "deploy:web": "npm run deploy -w web",
+    "test": "npm run test:worker && npm run test:web",
+    "test:worker": "npm run test -w worker",
+    "test:web": "npm run test -w web",
+    "lint": "npm run lint:worker && npm run lint:web"
+  },
+  "workspaces": [
+    "packages/shared",
+    "worker",
+    "web"
+  ],
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react-dom": "^19.2.3",
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}

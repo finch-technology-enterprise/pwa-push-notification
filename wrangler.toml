@@ -1,0 +1,28 @@
+name = "ntfy-cf-api"
+main = "worker/src/index.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ntfy-cf-db"
+database_id = ""
+
+[[durable_objects.bindings]]
+name = "TOPIC_DO"
+class_name = "TopicDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["TopicDO"]
+
+[vars]
+BASE_URL = "https://ntfy-cf-api.john-lee-zus.workers.dev"
+ENABLE_SIGNUP = "true"
+ENABLE_LOGIN = "true"
+DISALLOWED_TOPICS = "docs,static,file,app,metrics,account,settings,signup,login,v1"
+ACCESS_CONTROL_ALLOW_ORIGIN = "*"
+VISITOR_SUBSCRIPTION_LIMIT = "30"
+VISITOR_MESSAGE_DAILY_LIMIT = "0"
+MESSAGE_SIZE_LIMIT = "4096"
+KEEPALIVE_INTERVAL = "45"
