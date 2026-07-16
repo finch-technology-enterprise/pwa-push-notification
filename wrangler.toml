@@ -34,7 +34,7 @@ send_email = [
 ]
 
 [vars]
-BASE_URL = "https://pwa-push-notification.finchtech.my.workers.dev"
+BASE_URL = "https://pwa-push-notification.finchtech-my.workers.dev"
 ENABLE_SIGNUP = "true"
 ENABLE_LOGIN = "true"
 DISALLOWED_TOPICS = "docs,static,file,app,metrics,account,settings,signup,login,v1"
