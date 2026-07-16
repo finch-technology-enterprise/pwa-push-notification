@@ -5,6 +5,10 @@ compatibility_flags = ["nodejs_compat"]
 
 account_id = "28970b96b4880e4f41cc0487104898a0"
 
+send_email = [
+  { name = "EMAIL" }
+]
+
 # Serve the frontend build as static assets alongside the Worker API
 [assets]
 directory = "web/build"
@@ -25,13 +29,13 @@ class_name = "TopicDO"
 tag = "v1"
 new_classes = ["TopicDO"]
 
+[[migrations]]
+tag = "v2"
+deleted_classes = ["AuthDO"]
+
 [[r2_buckets]]
 binding = "ATTACHMENTS"
 bucket_name = "pwa-push-attachments"
-
-send_email = [
-  { name = "EMAIL" }
-]
 
 [vars]
 BASE_URL = "https://pwa-push-notification.finchtech-my.workers.dev"
