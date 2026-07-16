@@ -1,0 +1,296 @@
+import api from "./Api";
+import notifier from "./Notifier";
+import prefs from "./Prefs";
+import db from "./db";
+import { topicUrl } from "./utils";
+import { messageWithSequenceId } from "./notificationUtils";
+import { EVENT_MESSAGE, EVENT_MESSAGE_CLEAR, EVENT_MESSAGE_DELETE } from "./events";
+
+export class SubscriptionManager {
+  constructor(dbImpl) {
+    this.db = dbImpl;
+  }
+
+  /** All subscriptions, including "new count"; this is a JOIN, see https://dexie.org/docs/API-Reference#joining */
+  async all() {
+    const subscriptions = await this.db.subscriptions.toArray();
+    return Promise.all(
+      subscriptions.map(async (s) => ({
+        ...s,
+        new: await this.db.notifications.where({ subscriptionId: s.id, new: 1 }).count(),
+      })),
+    );
+  }
+
+  /**
+   * List of topics for which Web Push is enabled. This excludes (a) internal topics, (b) topics that are muted,
+   * and (c) topics from other hosts. Returns an empty list if Web Push is disabled.
+   *
+   * It is important to note that "mutedUntil" must be part of the where() query, otherwise the Dexie live query
+   * will not react to it, and the Web Push topics will not be updated when the user mutes a topic.
+   */
+  async webPushTopics(pushPossible) {
+    if (!pushPossible) {
+      return [];
+    }
+
+    // the Promise.resolve wrapper is not superfluous, without it the live query breaks:
+    // https://dexie.org/docs/dexie-react-hooks/useLiveQuery()#calling-non-dexie-apis-from-querier
+    const enabled = await Promise.resolve(prefs.webPushEnabled());
+    if (!enabled) {
+      return [];
+    }
+
+    const subscriptions = await this.db.subscriptions.where({ baseUrl: config.base_url, mutedUntil: 0 }).toArray();
+    return subscriptions.filter(({ internal }) => !internal).map(({ topic }) => topic);
+  }
+
+  async get(subscriptionId) {
+    return this.db.subscriptions.get(subscriptionId);
+  }
+
+  async notify(subscriptionId, notification) {
+    if (notification.event !== EVENT_MESSAGE) {
+      return;
+    }
+    const subscription = await this.get(subscriptionId);
+    if (subscription.mutedUntil > 0) {
+      return;
+    }
+    const priority = notification.priority ?? 3;
+    if (priority < (await prefs.minPriority())) {
+      return;
+    }
+    await notifier.notify(subscription, notification);
+  }
+
+  /**
+   * Upsert a subscription: create it if it doesn't exist yet, or merge the given fields into the
+   * existing one. Merging matters for account sync, which passes the remote display name and
+   * reservation -- without it, reserving/unreserving a topic you're already subscribed to would
+   * never be reflected locally until the database is recreated (e.g. a fresh login). Local-only
+   * state such as mutedUntil and last is preserved on merge.
+   *
+   * @param {string} baseUrl
+   * @param {string} topic
+   * @param {object} opts
+   * @param {boolean} opts.internal
+   * @returns
+   */
+  async upsert(baseUrl, topic, opts = {}) {
+    const id = topicUrl(baseUrl, topic);
+
+    const existingSubscription = await this.get(id);
+    if (existingSubscription) {
+      // Avoid a needless write (and the resulting Dexie live-query churn) when nothing changed.
+      const changed = Object.keys(opts).some((key) => existingSubscription[key] !== opts[key]);
+      if (!changed) {
+        return existingSubscription;
+      }
+      const updatedSubscription = { ...existingSubscription, ...opts };
+      await this.db.subscriptions.put(updatedSubscription);
+      return updatedSubscription;
+    }
+
+    const subscription = {
+      ...opts,
+      id,
+      baseUrl,
+      topic,
+      mutedUntil: 0,
+      last: null,
+    };
+
+    await this.db.subscriptions.put(subscription);
+
+    return subscription;
+  }
+
+  async syncFromRemote(remoteSubscriptions, remoteReservations) {
+    console.log(`[SubscriptionManager] Syncing subscriptions from remote`, remoteSubscriptions);
+
+    // Add remote subscriptions
+    const remoteIds = await Promise.all(
+      remoteSubscriptions.map(async (remote) => {
+        const reservation = remoteReservations?.find((r) => remote.base_url === config.base_url && remote.topic === r.topic) || null;
+
+        // upsert(): for topics that already exist locally this merges in the latest remote
+        // display name and reservation (see upsert() for why this matters).
+        const local = await this.upsert(remote.base_url, remote.topic, {
+          displayName: remote.display_name, // May be undefined
+          reservation, // May be null!
+        });
+
+        return local.id;
+      }),
+    );
+
+    // Remove local subscriptions that do not exist remotely
+    const localSubscriptions = await this.db.subscriptions.toArray();
+
+    await Promise.all(
+      localSubscriptions.map(async (local) => {
+        const remoteExists = remoteIds.includes(local.id);
+        if (!local.internal && !remoteExists) {
+          await this.remove(local);
+        }
+      }),
+    );
+  }
+
+  async updateWebPushSubscriptions(topics) {
+    const hasWebPushTopics = topics.length > 0;
+    const browserSubscription = await notifier.webPushSubscription(hasWebPushTopics);
+
+    if (!browserSubscription) {
+      console.log(
+        "[SubscriptionManager] No browser subscription currently exists, so web push was never enabled or the notification permission was removed. Skipping.",
+      );
+      return;
+    }
+
+    if (hasWebPushTopics) {
+      await api.updateWebPush(browserSubscription, topics);
+    } else {
+      await api.deleteWebPush(browserSubscription);
+    }
+  }
+
+  async updateState(subscriptionId, state) {
+    this.db.subscriptions.update(subscriptionId, { state });
+  }
+
+  async remove(subscription) {
+    await this.db.subscriptions.delete(subscription.id);
+    await this.db.notifications.where({ subscriptionId: subscription.id }).delete();
+  }
+
+  async first() {
+    return this.db.subscriptions.toCollection().first(); // May be undefined
+  }
+
+  async getNotifications(subscriptionId) {
+    // This is quite awkward, but it is the recommended approach as per the Dexie docs.
+    // It's actually fine, because the reading and filtering is quite fast. The rendering is what's
+    // killing performance. See  https://dexie.org/docs/Collection/Collection.offset()#a-better-paging-approach
+
+    return this.db.notifications
+      .orderBy("time") // Sort by time
+      .filter((n) => n.subscriptionId === subscriptionId)
+      .reverse()
+      .toArray();
+  }
+
+  async getAllNotifications() {
+    return this.db.notifications
+      .orderBy("time") // Efficient, see docs
+      .reverse()
+      .toArray();
+  }
+
+  /** Adds notification, or returns false if it already exists */
+  async addNotification(subscriptionId, notification) {
+    const exists = await this.db.notifications.get(notification.id);
+    if (exists || notification.event === EVENT_MESSAGE_DELETE || notification.event === EVENT_MESSAGE_CLEAR) {
+      return false;
+    }
+    try {
+      // Note: Service worker (sw.js) and addNotifications() duplicates this logic,
+      // so if you change it here, change it there too.
+
+      // Add notification to database
+      await this.db.notifications.add({
+        ...messageWithSequenceId(notification),
+        subscriptionId,
+        new: 1, // New marker (used for bubble indicator); cannot be boolean; Dexie index limitation
+      });
+
+      // FIXME consider put() for double tab
+      // Update subscription last message id (for ?since=... queries)
+      await this.db.subscriptions.update(subscriptionId, {
+        last: notification.id,
+      });
+    } catch (e) {
+      console.error(`[SubscriptionManager] Error adding notification`, e);
+    }
+    return true;
+  }
+
+  /** Adds/replaces notifications, will not throw if they exist */
+  async addNotifications(subscriptionId, notifications) {
+    const notificationsWithSubscriptionId = notifications.map((notification) => ({
+      ...messageWithSequenceId(notification),
+      subscriptionId,
+    }));
+    const lastNotificationId = notifications.at(-1).id;
+    await this.db.notifications.bulkPut(notificationsWithSubscriptionId);
+    await this.db.subscriptions.update(subscriptionId, {
+      last: lastNotificationId,
+    });
+  }
+
+  async updateNotification(notification) {
+    const exists = await this.db.notifications.get(notification.id);
+    if (!exists) {
+      return false;
+    }
+    try {
+      await this.db.notifications.put({ ...notification });
+    } catch (e) {
+      console.error(`[SubscriptionManager] Error updating notification`, e);
+    }
+    return true;
+  }
+
+  async deleteNotification(notificationId) {
+    await this.db.notifications.delete(notificationId);
+  }
+
+  async deleteNotificationBySequenceId(subscriptionId, sequenceId) {
+    await this.db.notifications.where({ subscriptionId, sequenceId }).delete();
+  }
+
+  async deleteNotifications(subscriptionId) {
+    await this.db.notifications.where({ subscriptionId }).delete();
+  }
+
+  async markNotificationRead(notificationId) {
+    await this.db.notifications.where({ id: notificationId }).modify({ new: 0 });
+  }
+
+  async markNotificationReadBySequenceId(subscriptionId, sequenceId) {
+    await this.db.notifications.where({ subscriptionId, sequenceId }).modify({ new: 0 });
+  }
+
+  async markNotificationsRead(subscriptionId) {
+    await this.db.notifications.where({ subscriptionId, new: 1 }).modify({ new: 0 });
+  }
+
+  async setMutedUntil(subscriptionId, mutedUntil) {
+    await this.db.subscriptions.update(subscriptionId, {
+      mutedUntil,
+    });
+  }
+
+  async setDisplayName(subscriptionId, displayName) {
+    await this.db.subscriptions.update(subscriptionId, {
+      displayName,
+    });
+  }
+
+  async setReservation(subscriptionId, reservation) {
+    await this.db.subscriptions.update(subscriptionId, {
+      reservation,
+    });
+  }
+
+  async update(subscriptionId, params) {
+    await this.db.subscriptions.update(subscriptionId, params);
+  }
+
+  async pruneNotifications(thresholdTimestamp) {
+    await this.db.notifications.where("time").below(thresholdTimestamp).delete();
+  }
+}
+
+export default new SubscriptionManager(db());

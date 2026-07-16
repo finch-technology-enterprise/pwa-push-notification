@@ -1,0 +1,21 @@
+{
+  "name": "ntfy",
+  "short_name": "ntfy",
+  "description": "Send push notifications to your phone or desktop via HTTP PUT/POST",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f5f5",
+  "theme_color": "#317f6f",
+  "icons": [
+    {
+      "src": "/static/images/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/images/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

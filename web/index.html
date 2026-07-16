@@ -1,78 +1,142 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta charset="UTF-8" />
+    <title>ntfy web</title>
+
+    <!-- Mobile view -->
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <meta name="HandheldFriendly" content="true" />
+
+    <!-- Mobile browsers, background color -->
     <meta name="theme-color" content="#317f6f" />
-    <meta name="description" content="ntfy - send push notifications to your phone or desktop" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="ntfy" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="application-name" content="ntfy" />
-    <meta name="msapplication-TileColor" content="#317f6f" />
-    <meta name="msapplication-tap-highlight" content="no" />
-    <meta name="format-detection" content="telephone=no" />
-    <link rel="apple-touch-icon" href="/static/images/pwa-192x192.png" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/images/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/static/images/favicon-16x16.png" />
-    <link rel="mask-icon" href="/static/images/safari-pinned-tab.svg" color="#317f6f" />
+    <meta name="msapplication-navbutton-color" content="#317f6f" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="#317f6f" />
+    <link rel="apple-touch-icon" href="/static/images/apple-touch-icon.png" sizes="180x180" />
+    <link rel="mask-icon" href="/static/images/ntfy-mask.svg" color="#317f6f" />
+
+    <!-- Favicon, see favicon.io -->
+    <link rel="icon" type="image/png" href="/static/images/favicon.ico" />
+
+    <!-- Previews in Google, Slack, WhatsApp, etc. -->
+    <meta
+      name="description"
+      content="ntfy lets you send push notifications via scripts from any computer or phone. Made with ❤ by Philipp C. Heckel, Apache License 2.0, source at https://heckel.io/ntfy."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:site_name" content="ntfy web" />
+    <meta property="og:title" content="ntfy web" />
+    <meta
+      property="og:description"
+      content="ntfy lets you send push notifications via scripts from any computer or phone. Made with ❤ by Philipp C. Heckel, Apache License 2.0, source at https://heckel.io/ntfy."
+    />
+    <meta property="og:image" content="/static/images/ntfy.png" />
+    <meta property="og:url" content="https://ntfy.sh" />
+
+    <!-- Never index -->
+    <meta name="robots" content="noindex, nofollow" />
+
+    <!-- Style overrides & fonts -->
+    <link rel="stylesheet" href="/static/css/app.css" type="text/css" />
+    <link rel="stylesheet" href="/static/css/fonts.css" type="text/css" />
+
+    <!-- PWA -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/static/css/fonts.css" />
-    <script src="/config.js"></script>
-    <title>ntfy</title>
+
+    <!-- Splash: painted before the JS bundle loads, faded out by the app once ready (see
+       src/app/splash.js). Background matches MUI's grey[100]/grey[900] for a seamless handoff. -->
     <style>
-      html, body, #root {
-        height: 100%;
-        margin: 0;
-        padding: 0;
-        background: #1a1a1a;
+      html {
+        background-color: #f5f5f5;
       }
+
+      html.dark {
+        background-color: #212121;
+      }
+
       #splash {
         position: fixed;
-        top: 0; left: 0; right: 0; bottom: 0;
+        inset: 0;
+        z-index: 200000;
         display: flex;
         align-items: center;
         justify-content: center;
-        flex-direction: column;
-        background: linear-gradient(135deg, #317f6f 0%, #2b6e62 50%, #1a1a1a 100%);
-        color: #fff;
-        z-index: 9999;
-        transition: opacity 0.5s ease-out;
+        background-color: #f5f5f5;
+        opacity: 1;
+        /* Background fade = the app fading in once the logo is gone (see src/app/splash.js). */
+        transition: opacity 0.1s ease-out;
       }
-      #splash.hidden {
+
+      html.dark #splash {
+        background-color: #212121;
+      }
+
+      #splash.splash-hidden {
         opacity: 0;
         pointer-events: none;
       }
-      #splash svg {
-        width: 80px;
-        height: 80px;
-        margin-bottom: 16px;
+
+      #splash img {
+        width: 112px;
+        height: 112px;
+        /* Gently pulse while loading; src/app/splash.js stops this and fades the logo out. */
+        animation: splash-pulse 1.4s ease-in-out infinite;
       }
-      #splash h1 {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-size: 28px;
-        font-weight: 700;
-        margin: 0;
-        letter-spacing: 2px;
+
+      @keyframes splash-pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.35;
+        }
       }
-      #splash p {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-size: 14px;
-        opacity: 0.7;
-        margin: 8px 0 0;
+
+      @media (prefers-reduced-motion: reduce) {
+        #splash {
+          transition: none;
+        }
+
+        #splash img {
+          animation: none;
+        }
       }
     </style>
+
+    <!-- Decide light/dark before first paint from the "prefcache" blob (written by PrefCache.jsx) --
+       avoids the async-IndexedDB theme flash. Keep the key in sync with PrefCache.jsx. -->
+    <script>
+      (function () {
+        try {
+          var cache = JSON.parse(localStorage.getItem("prefcache"));
+          var theme = cache && cache.theme;
+          var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var dark = theme === "dark" || ((!theme || theme === "system") && prefersDark);
+          if (dark) {
+            document.documentElement.classList.add("dark");
+          }
+        } catch (e) {
+          /* localStorage/matchMedia/JSON unavailable -- fall back to the default light splash */
+        }
+      })();
+    </script>
   </head>
   <body>
-    <div id="splash">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.9 22 12 22ZM18 16V11C18 7.93 16.36 5.36 13.5 4.68V4C13.5 3.17 12.83 2.5 12 2.5C11.17 2.5 10.5 3.17 10.5 4V4.68C7.63 5.36 6 7.92 6 11V16L4 18V19H20V18L18 16Z" fill="white"/>
-      </svg>
-      <h1>ntfy</h1>
-      <p>Loading…</p>
+    <noscript>
+      ntfy web requires JavaScript, but you can also use the
+      <a href="https://ntfy.sh/docs/subscribe/cli/">CLI</a> or <a href="https://ntfy.sh/docs/subscribe/phone/">Android/iOS app</a> to
+      subscribe.
+    </noscript>
+
+    <!-- Static splash, removed by src/app/splash.js once ready. Logo is a same-origin SVG (precached by the SW). -->
+    <div id="splash" aria-hidden="true">
+      <img src="/static/images/ntfy-splash.svg" alt="" />
     </div>
     <div id="root"></div>
-    <script type="module" src="/src/index.tsx"></script>
+    <script src="/config.js"></script>
+    <script type="module" src="/src/index.jsx"></script>
   </body>
 </html>
