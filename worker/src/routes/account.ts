@@ -1,0 +1,459 @@
+import { Hono } from 'hono'
+import { env } from 'hono/adapter'
+import type { Env } from '../index'
+import {
+  authenticate, requireAuth, hashPassword, generateToken,
+  generateId, nowUnix,
+} from '../middleware'
+import { initDatabase } from '../db'
+
+const app = new Hono<Env>()
+
+app.post('/account', async (c) => {
+  const { DB, ENABLE_SIGNUP } = env(c)
+  await initDatabase(DB)
+
+  if (ENABLE_SIGNUP === 'false') {
+    return c.json({
+      code: 40301, http_code: 403, error: 'Sign-up is disabled', link: 'https://ntfy.sh/docs',
+    }, 403)
+  }
+
+  const body = await c.req.json<{ user: string; password: string }>()
+  if (!body.user || !body.password) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  if (body.user.length < 3 || body.user.length > 64) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Username must be between 3 and 64 characters', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  if (body.password.length < 6) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Password must be at least 6 characters', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  const existing = await DB.prepare('SELECT id FROM user WHERE user_name = ?').bind(body.user).first()
+  if (existing) {
+    return c.json({
+      code: 40901, http_code: 409, error: 'Username already taken', link: 'https://ntfy.sh/docs',
+    }, 409)
+  }
+
+  const userId = generateId()
+  const passHash = await hashPassword(body.password)
+  const now = nowUnix()
+
+  await DB.prepare(
+    'INSERT INTO user (id, user_name, pass, role, prefs, sync_topic, provisioned, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(userId, body.user, passHash, 'user', '{}', '', 0, now).run()
+
+  const token = await generateToken()
+  const tokenExpires = now + 86400 * 365
+
+  await DB.prepare(
+    'INSERT INTO user_token (user_id, token, label, last_access, last_origin, expires, provisioned) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(userId, token, 'default', now, '', tokenExpires, 0).run()
+
+  return c.json({
+    id: userId,
+    user: body.user,
+    token,
+    role: 'user',
+    prefs: {},
+    created: now,
+  }, 201)
+})
+
+app.get('/account', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+
+  const auth = await requireAuth(c)
+
+  const user = await DB.prepare(
+    'SELECT id, user_name, role, prefs, sync_topic, created FROM user WHERE id = ? AND deleted IS NULL'
+  ).bind(auth.userId).first<{ id: string; user_name: string; role: string; prefs: string; sync_topic: string; created: number }>()
+
+  if (!user) {
+    return c.json({
+      code: 40401, http_code: 404, error: 'User not found', link: 'https://ntfy.sh/docs',
+    }, 404)
+  }
+
+  const emails = await DB.prepare(
+    'SELECT email, is_primary FROM user_email WHERE user_id = ?'
+  ).bind(auth.userId).all()
+
+  const phones = await DB.prepare(
+    'SELECT phone_number FROM user_phone WHERE user_id = ?'
+  ).bind(auth.userId).all()
+
+  return c.json({
+    id: user.id,
+    user: user.user_name,
+    role: user.role,
+    prefs: JSON.parse(user.prefs || '{}'),
+    sync_topic: user.sync_topic,
+    created: user.created,
+    emails: emails.results?.map((r: any) => r.email) || [],
+    phone_numbers: phones.results?.map((r: any) => r.phone_number) || [],
+  })
+})
+
+app.delete('/account', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  await DB.prepare('UPDATE user SET deleted = ? WHERE id = ?').bind(nowUnix(), auth.userId).run()
+
+  return c.json({ success: true })
+})
+
+app.post('/account/token', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+
+  const body = await c.req.json<{ user: string; password: string; label?: string }>()
+
+  if (!body.user || !body.password) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  const user = await DB.prepare(
+    'SELECT id, user_name, pass, role FROM user WHERE user_name = ? AND deleted IS NULL'
+  ).bind(body.user).first<{ id: string; user_name: string; pass: string; role: string }>()
+
+  if (!user) {
+    return c.json({
+      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://ntfy.sh/docs',
+    }, 401)
+  }
+
+  const valid = await verifyPassword(body.password, user.pass)
+  if (!valid) {
+    return c.json({
+      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://ntfy.sh/docs',
+    }, 401)
+  }
+
+  const token = await generateToken()
+  const now = nowUnix()
+  const tokenExpires = now + 86400 * 365
+  const label = body.label || 'web'
+
+  await DB.prepare(
+    'INSERT INTO user_token (user_id, token, label, last_access, last_origin, expires, provisioned) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(user.id, token, label, now, '', tokenExpires, 0).run()
+
+  return c.json({
+    token,
+    user: user.user_name,
+    role: user.role,
+    id: user.id,
+    last_access: now,
+    expires: tokenExpires,
+  }, 201)
+})
+
+app.patch('/account/token', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  const tokens = await DB.prepare(
+    'SELECT user_id, token, label, last_access, last_origin, expires FROM user_token WHERE user_id = ?'
+  ).bind(auth.userId).all()
+
+  const now = nowUnix()
+  const extended: string[] = []
+
+  for (const t of (tokens.results || []) as any[]) {
+    const newExpires = now + 86400 * 365
+    await DB.prepare('UPDATE user_token SET expires = ? WHERE user_id = ? AND token = ?')
+      .bind(newExpires, auth.userId, t.token).run()
+    extended.push(t.token)
+  }
+
+  return c.json({ success: true, tokens: extended })
+})
+
+app.delete('/account/token', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  const body = await c.req.json().catch(() => ({}))
+  const tokenToDelete = body.token || c.req.query('token')
+
+  if (tokenToDelete) {
+    await DB.prepare('DELETE FROM user_token WHERE user_id = ? AND token = ?')
+      .bind(auth.userId, tokenToDelete).run()
+  } else {
+    await DB.prepare('DELETE FROM user_token WHERE user_id = ?').bind(auth.userId).run()
+  }
+
+  return c.json({ success: true })
+})
+
+app.post('/account/password', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  const body = await c.req.json<{ current_password: string; new_password: string }>()
+
+  if (!body.current_password || !body.new_password) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing current_password or new_password', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  if (body.new_password.length < 6) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Password must be at least 6 characters', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  const user = await DB.prepare('SELECT pass FROM user WHERE id = ?').bind(auth.userId).first<{ pass: string }>()
+  if (!user) {
+    return c.json({
+      code: 40401, http_code: 404, error: 'User not found', link: 'https://ntfy.sh/docs',
+    }, 404)
+  }
+
+  const valid = await verifyPassword(body.current_password, user.pass)
+  if (!valid) {
+    return c.json({
+      code: 40101, http_code: 401, error: 'Current password is incorrect', link: 'https://ntfy.sh/docs',
+    }, 401)
+  }
+
+  const newHash = await hashPassword(body.new_password)
+  await DB.prepare('UPDATE user SET pass = ? WHERE id = ?').bind(newHash, auth.userId).run()
+
+  return c.json({ success: true })
+})
+
+app.patch('/account/settings', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  const body = await c.req.json<Record<string, unknown>>()
+
+  const user = await DB.prepare('SELECT prefs, sync_topic FROM user WHERE id = ?').bind(auth.userId).first<{ prefs: string; sync_topic: string }>()
+  if (!user) {
+    return c.json({
+      code: 40401, http_code: 404, error: 'User not found', link: 'https://ntfy.sh/docs',
+    }, 404)
+  }
+
+  const prefs = JSON.parse(user.prefs || '{}')
+
+  if (body.prefs && typeof body.prefs === 'object' && !Array.isArray(body.prefs)) {
+    Object.assign(prefs, body.prefs)
+  }
+
+  const syncTopic = typeof body.sync_topic === 'string' ? body.sync_topic : user.sync_topic
+
+  await DB.prepare('UPDATE user SET prefs = ?, sync_topic = ? WHERE id = ?')
+    .bind(JSON.stringify(prefs), syncTopic, auth.userId).run()
+
+  return c.json({ success: true })
+})
+
+app.post('/account/subscription', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  const body = await c.req.json<{ topic: string; base_url?: string }>()
+  if (!body.topic) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  return c.json({ success: true })
+})
+
+app.patch('/account/subscription', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  await requireAuth(c)
+
+  return c.json({ success: true })
+})
+
+app.delete('/account/subscription', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  await requireAuth(c)
+
+  return c.json({ success: true })
+})
+
+app.post('/account/reservation', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  await requireAuth(c)
+
+  return c.json({ success: true })
+})
+
+app.delete('/account/reservation', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  await requireAuth(c)
+
+  return c.json({ success: true })
+})
+
+app.put('/account/phone', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  const body = await c.req.json<{ phone_number: string }>()
+  if (!body.phone_number) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing phone_number', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  await DB.prepare('INSERT OR IGNORE INTO user_phone (user_id, phone_number) VALUES (?, ?)')
+    .bind(auth.userId, body.phone_number).run()
+
+  return c.json({ success: true })
+})
+
+app.delete('/account/phone', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  const phoneNumber = c.req.query('phone_number') || (await c.req.json().catch(() => ({}))).phone_number
+  if (!phoneNumber) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing phone_number', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  await DB.prepare('DELETE FROM user_phone WHERE user_id = ? AND phone_number = ?')
+    .bind(auth.userId, phoneNumber).run()
+
+  return c.json({ success: true })
+})
+
+app.put('/account/email', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  const body = await c.req.json<{ email: string }>()
+  if (!body.email) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing email', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  const existing = await DB.prepare(
+    'SELECT is_primary FROM user_email WHERE user_id = ?'
+  ).bind(auth.userId).first<{ is_primary: number }>()
+
+  await DB.prepare('INSERT OR IGNORE INTO user_email (user_id, email, is_primary) VALUES (?, ?, ?)')
+    .bind(auth.userId, body.email, existing ? 0 : 1).run()
+
+  return c.json({ success: true })
+})
+
+app.delete('/account/email', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  const email = c.req.query('email') || (await c.req.json().catch(() => ({}))).email
+  if (!email) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing email', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  await DB.prepare('DELETE FROM user_email WHERE user_id = ? AND email = ?')
+    .bind(auth.userId, email).run()
+
+  return c.json({ success: true })
+})
+
+app.post('/account/email/verify', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  await requireAuth(c)
+
+  return c.json({ success: true })
+})
+
+app.post('/account/password/reset/request', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+
+  const body = await c.req.json<{ email: string }>()
+  if (!body.email) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing email', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  return c.json({ success: true })
+})
+
+app.post('/account/password/reset', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+
+  const body = await c.req.json<{ token: string; password: string }>()
+  if (!body.token || !body.password) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing token or password', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  if (body.password.length < 6) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Password must be at least 6 characters', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  return c.json({ success: true })
+})
+
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const parts = hash.split('$')
+  const algo = parts[0]
+  const iterations64 = parts[1]
+  const salt64 = parts[2]
+  const hash64 = parts[3]
+  if (!algo || !iterations64 || !salt64 || !hash64 || algo !== 'scrypt') return false
+  const iterations = parseInt(atob(iterations64), 10)
+  const salt = Uint8Array.from(atob(salt64), c => c.charCodeAt(0))
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']
+  )
+  const derived = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256
+  )
+  const expectedHash = atob(hash64)
+  const derivedHex = Array.from(new Uint8Array(derived)).map(b => b.toString(16).padStart(2, '0')).join('')
+  return derivedHex === expectedHash
+}
+
+export { app as accountRoutes }
