@@ -62,8 +62,15 @@ export default {
       try {
         const assets = (env as any).ASSETS as Fetcher
         const assetResponse = await assets.fetch(request)
-        if (assetResponse.status !== 404) {
+        if (assetResponse.status !== 404 && assetResponse.status !== 307) {
           return assetResponse
+        }
+        // Assets returned 404/307 — try index.html for SPA routing
+        const indexUrl = new URL(request.url)
+        indexUrl.pathname = '/index.html'
+        const indexResponse = await assets.fetch(new Request(indexUrl, request))
+        if (indexResponse.status === 200) {
+          return indexResponse
         }
       } catch {
         // ASSETS.fetch may throw on methods it can't serve
