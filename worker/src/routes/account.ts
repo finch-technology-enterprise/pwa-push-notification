@@ -283,7 +283,11 @@ app.post('/account/subscription', async (c) => {
     }, 400)
   }
 
-  return c.json({ success: true })
+  await DB.prepare(
+    'INSERT OR IGNORE INTO user_access (user_id, topic, read_access, write_access, owner_user_id, provisioned) VALUES (?, ?, 1, 1, ?, 0)'
+  ).bind(auth.userId, body.topic, auth.userId).run()
+
+  return c.json({ success: true, topic: body.topic })
 })
 
 app.patch('/account/subscription', async (c) => {
@@ -297,7 +301,13 @@ app.patch('/account/subscription', async (c) => {
 app.delete('/account/subscription', async (c) => {
   const { DB } = env(c)
   await initDatabase(DB)
-  await requireAuth(c)
+  const auth = await requireAuth(c)
+
+  const topic = c.req.query('topic')
+  if (topic) {
+    await DB.prepare('DELETE FROM user_access WHERE user_id = ? AND topic = ?')
+      .bind(auth.userId, topic).run()
+  }
 
   return c.json({ success: true })
 })
@@ -307,7 +317,7 @@ app.post('/account/reservation', async (c) => {
   await initDatabase(DB)
   await requireAuth(c)
 
-  return c.json({ success: true })
+  return c.json({ success: true, message: 'Reservations not yet implemented' })
 })
 
 app.delete('/account/reservation', async (c) => {
@@ -413,6 +423,23 @@ app.post('/account/password/reset/request', async (c) => {
     }, 400)
   }
 
+  const userEmail = await DB.prepare(
+    'SELECT u.id FROM user u JOIN user_email e ON e.user_id = u.id WHERE e.email = ? AND u.deleted IS NULL'
+  ).bind(body.email).first<{ id: string }>()
+
+  if (userEmail) {
+    const rawToken = await generateToken()
+    const now = nowUnix()
+    const expires = now + 3600
+
+    const tokenHashBytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rawToken))
+    const tokenHashHex = Array.from(new Uint8Array(tokenHashBytes)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+    await DB.prepare(
+      'INSERT INTO user_magic_link (token_hash, kind, user_id, email, expires, created) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(tokenHashHex, 'password-reset', userEmail.id, body.email, expires, now).run()
+  }
+
   return c.json({ success: true })
 })
 
@@ -432,6 +459,23 @@ app.post('/account/password/reset', async (c) => {
       code: 40001, http_code: 400, error: 'Password must be at least 6 characters', link: 'https://ntfy.sh/docs',
     }, 400)
   }
+
+  const tokenHashBytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body.token))
+  const tokenHashHex = Array.from(new Uint8Array(tokenHashBytes)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+  const link = await DB.prepare(
+    'SELECT user_id FROM user_magic_link WHERE token_hash = ? AND kind = ? AND expires > ?'
+  ).bind(tokenHashHex, 'password-reset', nowUnix()).first<{ user_id: string }>()
+
+  if (!link) {
+    return c.json({
+      code: 40101, http_code: 401, error: 'Invalid or expired token', link: 'https://ntfy.sh/docs',
+    }, 401)
+  }
+
+  const newHash = await hashPassword(body.password)
+  await DB.prepare('UPDATE user SET pass = ? WHERE id = ?').bind(newHash, link.user_id).run()
+  await DB.prepare('DELETE FROM user_magic_link WHERE token_hash = ?').bind(tokenHashHex).run()
 
   return c.json({ success: true })
 })

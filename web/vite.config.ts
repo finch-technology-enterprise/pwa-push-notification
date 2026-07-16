@@ -7,6 +7,17 @@ export default defineConfig(({ mode }) => ({
     outDir: 'dist',
     assetsDir: 'static/media',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-mui-core': ['@mui/material', '@mui/system', '@mui/icons-material'],
+          'vendor-mui-styles': ['@mui/material/styles', '@emotion/react', '@emotion/styled'],
+          'vendor-dexie': ['dexie'],
+          'vendor-i18n': ['i18next', 'react-i18next'],
+        },
+      },
+    },
   },
   server: {
     port: 3000,

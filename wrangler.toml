@@ -3,10 +3,12 @@ main = "worker/src/index.ts"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
 
+account_id = "28970b96b4880e4f41cc0487104898a0"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "ntfy-cf-db"
-database_id = ""
+database_id = "32d34caf-a618-41d0-9ce0-213c9e8ef090"
 
 [[durable_objects.bindings]]
 name = "TOPIC_DO"
@@ -17,7 +19,7 @@ tag = "v1"
 new_classes = ["TopicDO"]
 
 [vars]
-BASE_URL = "https://ntfy-cf-api.john-lee-zus.workers.dev"
+BASE_URL = "https://ntfy-cf-api.finchtech.my.workers.dev"
 ENABLE_SIGNUP = "true"
 ENABLE_LOGIN = "true"
 DISALLOWED_TOPICS = "docs,static,file,app,metrics,account,settings,signup,login,v1"

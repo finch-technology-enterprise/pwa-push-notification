@@ -1,10 +1,16 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, afterEach } from 'vitest'
+import { render, screen, cleanup, waitFor } from '@testing-library/react'
 import { App } from '../components/App'
 
+afterEach(() => {
+  cleanup()
+})
+
 describe('App', () => {
-  it('renders without crashing', () => {
+  it('renders without crashing', async () => {
     render(<App />)
-    expect(screen.getByText('ntfy')).toBeTruthy()
+    await waitFor(() => {
+      expect(screen.getByText('ntfy')).toBeTruthy()
+    }, { timeout: 5000 })
   })
 })
