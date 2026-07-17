@@ -18,10 +18,11 @@ app.get('/health', async (c) => {
 })
 
 app.get('/version', async (c) => {
+  const { BUILD_VERSION, BUILD_COMMIT, BUILD_DATE } = env(c)
   return c.json({
-    version: '2.11.1',
-    commit: 'cf',
-    date: '',
+    version: BUILD_VERSION || '2.11.1',
+    commit: BUILD_COMMIT || 'cf',
+    date: BUILD_DATE || '',
   })
 })
 
@@ -30,9 +31,17 @@ app.get('/stats', async (c) => {
     const { DB } = env(c)
     await initDatabase(DB)
     const stats = await getStats(DB)
+
+    // Calculate rate from last 10 seconds of message count
+    const tenSecAgo = Math.floor(Date.now() / 1000) - 10
+    const recent = await DB.prepare(
+      'SELECT COUNT(*) as cnt FROM messages WHERE time >= ?'
+    ).bind(tenSecAgo).first<{ cnt: number }>()
+    const messagesRate = recent?.cnt ? recent.cnt / 10 : 0
+
     return c.json({
       messages: stats.messages,
-      messages_rate: 0,
+      messages_rate: Math.round(messagesRate * 100) / 100,
     })
   } catch (err) {
     return c.json({ messages: 0, messages_rate: 0 })

@@ -40,6 +40,9 @@ export type Env = {
     ATTACHMENT_FILE_SIZE_LIMIT?: string
     ATTACHMENT_TOTAL_SIZE_LIMIT?: string
     FCM_SERVER_KEY?: string
+    BUILD_VERSION?: string
+    BUILD_COMMIT?: string
+    BUILD_DATE?: string
     TWILIO_ACCOUNT_SID?: string
     TWILIO_AUTH_TOKEN?: string
     TWILIO_FROM_NUMBER?: string
