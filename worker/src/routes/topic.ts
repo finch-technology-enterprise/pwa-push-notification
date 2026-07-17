@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { env } from 'hono/adapter'
 import type { Env } from '../index'
-import { authenticate, generateId, generateSequenceId, nowUnix, parseTags, parseActions } from '../middleware'
+import { authenticate, generateId, generateSequenceId, nowUnix, parseTags, parseActions, sanitizeHtml } from '../middleware'
 import { initDatabase, incrementMessages } from '../db'
 import { TOPIC_REGEX, DISALLOWED_TOPICS_DEFAULT } from '../types'
 import type { PublishMessage } from '../types'
@@ -122,11 +122,12 @@ async function handlePublish(c: any): Promise<Response> {
   const id = generateId()
   const now = nowUnix()
   const seqId = generateSequenceId()
-  const title = readParam(c, 'X-Title', 'Title') || ''
+  msgBody = sanitizeHtml(msgBody)
+  const title = sanitizeHtml(readParam(c, 'X-Title', 'Title') || '')
   const priority = Math.max(1, Math.min(5, parseInt(readParam(c, 'X-Priority', 'Priority') || '3', 10)))
   const tags = parseTags(readParam(c, 'X-Tags', 'Tags') || '')
-  const click = readParam(c, 'X-Click', 'Click') || ''
-  const icon = readParam(c, 'X-Icon', 'Icon') || ''
+  const click = sanitizeHtml(readParam(c, 'X-Click', 'Click') || '')
+  const icon = sanitizeHtml(readParam(c, 'X-Icon', 'Icon') || '')
   const actions = parseActions(readParam(c, 'X-Actions', 'Actions') || '[]')
   const sendAs = readParam(c, 'X-Send-As', 'Send-As') || ''
   const encoding = readParam(c, 'X-Encoding', 'Encoding') || ''

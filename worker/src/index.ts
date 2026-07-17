@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { env } from 'hono/adapter'
 import { logger } from 'hono/logger'
 import { secureHeaders } from 'hono/secure-headers'
 import { healthRoutes } from './routes/health'
@@ -10,7 +11,9 @@ import { accountRoutes } from './routes/account'
 import { adminRoutes } from './routes/admin'
 import { topicRoutes } from './routes/topic'
 import { attachmentRoutes } from './routes/attachment'
+import { billingRoutes } from './routes/billing'
 import { TOPIC_REGEX } from './types'
+import { buildConfigJs } from './routes/config'
 
 export type Env = {
   Bindings: {
@@ -43,18 +46,31 @@ export type Env = {
 
 const app = new Hono<Env>()
 
-app.use('*', cors())
+app.use('*', async (c, next) => {
+  const { ACCESS_CONTROL_ALLOW_ORIGIN } = env(c)
+  const allowOrigin = ACCESS_CONTROL_ALLOW_ORIGIN || '*'
+  const corsMiddleware = cors({ origin: allowOrigin })
+  return corsMiddleware(c, next)
+})
 app.use('*', logger())
 app.use('*', secureHeaders())
 
 app.route('/v1', healthRoutes)
 app.route('/v1', configRoutes)
+app.get('/config.js', (c) => {
+  const js = buildConfigJs(c)
+  return c.newResponse(js, 200, {
+    'Content-Type': 'application/javascript',
+    'Cache-Control': 'public, max-age=300',
+  })
+})
 app.route('/v1', metricsRoutes)
 app.route('/v1', webpushRoutes)
 app.route('/v1', accountRoutes)
 app.route('/v1', adminRoutes)
 app.route('/', attachmentRoutes)
 app.route('/', topicRoutes)
+app.route('/v1', billingRoutes)
 
 // Wrap the fetch handler so that non-API requests fall through to the static assets (frontend SPA).
 // With run_worker_first = true, ALL requests reach the Worker; we try assets first for non-API
@@ -69,7 +85,7 @@ export default {
     // For GET requests to non-API paths that aren't topic subscription paths,
     // try static assets first so the SPA handles its own routes.
     // Falls through to Hono if the asset doesn't exist (404).
-    if (request.method === 'GET' && !url.pathname.startsWith('/v1/') && !isSubscribePath) {
+    if (request.method === 'GET' && !url.pathname.startsWith('/v1/') && !isSubscribePath && url.pathname !== '/config.js') {
       try {
         const assets = (env as any).ASSETS as Fetcher
         const assetResponse = await assets.fetch(request)

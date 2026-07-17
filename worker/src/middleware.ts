@@ -3,14 +3,14 @@ import { env } from 'hono/adapter'
 import type { Env } from './index'
 import type { AuthInfo } from './types'
 
-async function verifyPassword(password: string, hash: string): Promise<boolean> {
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   const parts = hash.split('$')
   const algo = parts[0]
   const iterations64 = parts[1]
   const salt64 = parts[2]
   const hash64 = parts[3]
   if (!algo || !iterations64 || !salt64 || !hash64) return false
-  if (algo !== 'scrypt' && algo !== 'pbkdf2') return false
+  if (algo !== 'pbkdf2') return false
   const iterations = parseInt(atob(iterations64), 10)
   const salt = Uint8Array.from(atob(salt64), c => c.charCodeAt(0))
   const key = await crypto.subtle.importKey(
@@ -128,6 +128,15 @@ export function generateSequenceId(): string {
 
 export function nowUnix(): number {
   return Math.floor(Date.now() / 1000)
+}
+
+export function sanitizeHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
 }
 
 export function parseTags(tagsStr: string): string[] {

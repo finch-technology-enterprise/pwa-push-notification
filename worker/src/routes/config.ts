@@ -25,7 +25,7 @@ app.get('/config', async (c) => {
   await initDatabase(DB)
 
   const disallowed = DISALLOWED_TOPICS
-    ? DISALLOWED_TOPICS.split(',').map(s => s.trim()).filter(Boolean)
+    ? DISALLOWED_TOPICS.split(',').map((s: string) => s.trim()).filter(Boolean)
     : [...DISALLOWED_TOPICS_DEFAULT]
 
   const config = {
@@ -53,7 +53,11 @@ app.get('/config', async (c) => {
   return c.json(config)
 })
 
-app.get('/config.js', async (c) => {
+app.get('/config.js', handleConfigJs)
+
+export { app as configRoutes }
+
+export function buildConfigJs(c: any): string {
   const {
     BASE_URL,
     ENABLE_SIGNUP,
@@ -68,10 +72,10 @@ app.get('/config.js', async (c) => {
   } = env(c)
 
   const disallowed = DISALLOWED_TOPICS
-    ? DISALLOWED_TOPICS.split(',').map(s => s.trim()).filter(Boolean)
+    ? DISALLOWED_TOPICS.split(',').map((s: string) => s.trim()).filter(Boolean)
     : [...DISALLOWED_TOPICS_DEFAULT]
 
-  const js = `
+  return `
 self.config = {
   "base_url": ${JSON.stringify(BASE_URL || '')},
   "app_root": "/",
@@ -94,10 +98,11 @@ self.config = {
   "keepalive_interval": ${parseInt(KEEPALIVE_INTERVAL || '45', 10)}
 };
 `
-  return c.newResponse(js, 200, {
+}
+
+async function handleConfigJs(c: any): Promise<Response> {
+  return c.newResponse(buildConfigJs(c), 200, {
     'Content-Type': 'application/javascript',
     'Cache-Control': 'public, max-age=300',
   })
-})
-
-export { app as configRoutes }
+}

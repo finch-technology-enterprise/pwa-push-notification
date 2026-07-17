@@ -2,8 +2,8 @@ import { Hono } from 'hono'
 import { env } from 'hono/adapter'
 import type { Env } from '../index'
 import {
-  authenticate, requireAuth, hashPassword, generateToken,
-  generateId, nowUnix,
+  authenticate, requireAuth, hashPassword, verifyPassword,
+  generateToken, generateId, nowUnix,
 } from '../middleware'
 import { initDatabase } from '../db'
 import { sendEmail } from './email'
@@ -604,26 +604,5 @@ app.post('/account/password/reset', async (c) => {
 
   return c.json({ success: true })
 })
-
-async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const parts = hash.split('$')
-  const algo = parts[0]
-  const iterations64 = parts[1]
-  const salt64 = parts[2]
-  const hash64 = parts[3]
-  if (!algo || !iterations64 || !salt64 || !hash64) return false
-  if (algo !== 'scrypt' && algo !== 'pbkdf2') return false
-  const iterations = parseInt(atob(iterations64), 10)
-  const salt = Uint8Array.from(atob(salt64), c => c.charCodeAt(0))
-  const key = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']
-  )
-  const derived = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256
-  )
-  const expectedBytes = Uint8Array.from(atob(hash64), c => c.charCodeAt(0))
-  const derivedBytes = new Uint8Array(derived)
-  return derivedBytes.length === expectedBytes.length && derivedBytes.every((b, i) => b === expectedBytes[i])
-}
 
 export { app as accountRoutes }
