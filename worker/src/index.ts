@@ -22,6 +22,7 @@ export type Env = {
     BASE_URL: string
     ENABLE_SIGNUP?: string
     ENABLE_LOGIN?: string
+    ENABLE_RESET_PASSWORD?: string
     DISALLOWED_TOPICS?: string
     WEB_PUSH_PUBLIC_KEY?: string
     WEB_PUSH_PRIVATE_KEY?: string
@@ -30,6 +31,7 @@ export type Env = {
     VISITOR_MESSAGE_DAILY_LIMIT?: string
     MESSAGE_SIZE_LIMIT?: string
     KEEPALIVE_INTERVAL?: string
+    MAX_MESSAGES?: string
     ATTACHMENT_FILE_SIZE_LIMIT?: string
     ATTACHMENT_TOTAL_SIZE_LIMIT?: string
     FCM_SERVER_KEY?: string

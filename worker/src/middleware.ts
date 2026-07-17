@@ -9,7 +9,8 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
   const iterations64 = parts[1]
   const salt64 = parts[2]
   const hash64 = parts[3]
-  if (!algo || !iterations64 || !salt64 || !hash64 || algo !== 'scrypt') return false
+  if (!algo || !iterations64 || !salt64 || !hash64) return false
+  if (algo !== 'scrypt' && algo !== 'pbkdf2') return false
   const iterations = parseInt(atob(iterations64), 10)
   const salt = Uint8Array.from(atob(salt64), c => c.charCodeAt(0))
   const key = await crypto.subtle.importKey(
@@ -19,14 +20,14 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
     { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
     key, 256
   )
-  const expectedHash = atob(hash64)
-  const derivedHex = Array.from(new Uint8Array(derived)).map(b => b.toString(16).padStart(2, '0')).join('')
-  return derivedHex === expectedHash
+  const expectedBytes = Uint8Array.from(atob(hash64), c => c.charCodeAt(0))
+  const derivedBytes = new Uint8Array(derived)
+  return derivedBytes.length === expectedBytes.length && derivedBytes.every((b, i) => b === expectedBytes[i])
 }
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16))
-  const iterations = 100000
+  const iterations = 600000
   const key = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']
   )
@@ -37,7 +38,7 @@ export async function hashPassword(password: string): Promise<string> {
   const saltB64 = btoa(String.fromCharCode(...salt))
   const hashB64 = btoa(String.fromCharCode(...new Uint8Array(derived)))
   const iterB64 = btoa(String(iterations))
-  return `scrypt$${iterB64}$${saltB64}$${hashB64}`
+  return `pbkdf2$${iterB64}$${saltB64}$${hashB64}`
 }
 
 export async function generateToken(): Promise<string> {

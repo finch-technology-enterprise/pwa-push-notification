@@ -11,19 +11,26 @@ interface Connection {
   writer?: WritableStreamDefaultWriter<string>
 }
 
+interface DOBindings {
+  MAX_MESSAGES?: string
+  KEEPALIVE_INTERVAL?: string
+}
+
 export class TopicDO {
   private state: DurableObjectState
-  private env: unknown
+  private env: DOBindings
   private connections: Map<string, Connection> = new Map()
   private messages: PublishMessage[] = []
   private scheduledMessages: PublishMessage[] = []
-  private maxMessages = 100
-  private keepaliveInterval = 30_000
+  private maxMessages: number
+  private keepaliveInterval: number
   private initialized = false
 
-  constructor(state: DurableObjectState, env: unknown) {
+  constructor(state: DurableObjectState, env: DOBindings) {
     this.state = state
     this.env = env
+    this.maxMessages = parseInt(env.MAX_MESSAGES || '100', 10)
+    this.keepaliveInterval = parseInt(env.KEEPALIVE_INTERVAL || '30000', 10)
   }
 
   private async ensureInitialized(): Promise<void> {

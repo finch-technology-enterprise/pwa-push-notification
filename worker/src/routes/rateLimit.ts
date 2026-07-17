@@ -63,7 +63,34 @@ export async function checkAttachmentTotalLimit(
   }
 }
 
+export async function checkAuthRateLimit(db: D1Database, ip: string): Promise<{ allowed: boolean; retryAfter: number }> {
+  const window = 900
+  const maxAttempts = 5
+  const cutoff = Math.floor(Date.now() / 1000) - window
+
+  await db.prepare("DELETE FROM auth_failure WHERE failed_at < ?").bind(cutoff).run()
+
+  const count = await db.prepare(
+    "SELECT COUNT(*) as cnt FROM auth_failure WHERE ip = ? AND failed_at >= ?"
+  ).bind(ip, cutoff).first<{ cnt: number }>()
+
+  const current = count?.cnt ?? 0
+  return { allowed: current < maxAttempts, retryAfter: window }
+}
+
+export async function recordAuthFailure(db: D1Database, ip: string): Promise<void> {
+  const now = Math.floor(Date.now() / 1000)
+  await db.prepare("INSERT INTO auth_failure (ip, failed_at) VALUES (?, ?)").bind(ip, now).run()
+}
+
+const TIER_FIELDS = new Set([
+  'messages_limit', 'emails_limit', 'calls_limit', 'reservations_limit',
+  'attachment_file_size_limit', 'attachment_total_size_limit',
+  'attachment_expiry_duration', 'attachment_bandwidth_limit',
+])
+
 async function getTierIntLimit(db: D1Database, tierId: string, field: string): Promise<number | null> {
+  if (!TIER_FIELDS.has(field)) return null
   try {
     const row = await db.prepare(
       `SELECT ${field} as val FROM tier WHERE id = ?`

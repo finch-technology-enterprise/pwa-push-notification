@@ -296,32 +296,14 @@ export class SubscriptionManager {
     await this.db.notifications.where("time").below(thresholdTimestamp).delete();
   }
 
-  trackDismissed(subscriptionId, sequenceId) {
-    try {
-      const key = `dismissed_${subscriptionId}`;
-      const raw = localStorage.getItem(key);
-      const set = raw ? new Set(JSON.parse(raw)) : new Set();
-      set.add(sequenceId);
-      localStorage.setItem(key, JSON.stringify([...set]));
-    } catch {}
+  trackDismissed(_subscriptionId, _sequenceId) {
   }
 
-  isDismissed(subscriptionId, sequenceId) {
-    try {
-      const key = `dismissed_${subscriptionId}`;
-      const raw = localStorage.getItem(key);
-      if (!raw) return false;
-      const set = new Set(JSON.parse(raw));
-      return set.has(sequenceId);
-    } catch {
-      return false;
-    }
+  isDismissed(_subscriptionId, _sequenceId) {
+    return false;
   }
 
-  clearDismissed(subscriptionId) {
-    try {
-      localStorage.removeItem(`dismissed_${subscriptionId}`);
-    } catch {}
+  clearDismissed(_subscriptionId) {
   }
 }
 

@@ -69,18 +69,6 @@ class Poller {
     // Add only the latest notification for each non-deleted sequence
     let notificationsToAdd = Object.values(latestBySequenceId).filter((n) => n.event === EVENT_MESSAGE);
 
-    // Filter out locally dismissed notifications
-    if (notificationsToAdd.length > 0) {
-      const before = notificationsToAdd.length;
-      notificationsToAdd = notificationsToAdd.filter((n) => {
-        const seqId = messageWithSequenceId(n).sequenceId;
-        return !subscriptionManager.isDismissed(subscription.id, seqId);
-      });
-      if (notificationsToAdd.length !== before) {
-        console.log(`[Poller] Filtered out ${before - notificationsToAdd.length} dismissed notification(s)`);
-      }
-    }
-
     if (notificationsToAdd.length > 0) {
       console.log(`[Poller] Adding ${notificationsToAdd.length} notification(s) for ${subscription.id}`);
       await subscriptionManager.addNotifications(subscription.id, notificationsToAdd);

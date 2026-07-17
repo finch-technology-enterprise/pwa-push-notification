@@ -9,7 +9,7 @@ self.config = {
   enable_emails: false,
   enable_calls: false,
   enable_web_push: false,
-  enable_reset_password: false,
+  enable_reset_password: true,
   billing_contact: "",
   web_push_public_key: "",
   disallowed_topics: ["docs", "static", "file", "app", "metrics", "account", "settings", "signup", "login", "v1"],

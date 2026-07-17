@@ -160,6 +160,13 @@ CREATE TABLE IF NOT EXISTS fcm_subscription_topic (
 );
 CREATE INDEX IF NOT EXISTS idx_fcm_topic ON fcm_subscription_topic(topic);
 
+CREATE TABLE IF NOT EXISTS auth_failure (
+    ip        TEXT NOT NULL,
+    failed_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_failure_ip ON auth_failure(ip);
+CREATE INDEX IF NOT EXISTS idx_auth_failure_failed_at ON auth_failure(failed_at);
+
 CREATE TABLE IF NOT EXISTS schema_version (
     store   TEXT PRIMARY KEY,
     version INTEGER NOT NULL
@@ -269,6 +276,20 @@ export async function initDatabase(db: D1Database): Promise<void> {
       await db.prepare("CREATE INDEX IF NOT EXISTS idx_fcm_topic ON fcm_subscription_topic(topic)").run()
     } catch {}
     await db.prepare("UPDATE schema_version SET version = 3 WHERE store = 'main'").run()
+  }
+
+  if (existing.version === 3) {
+    try {
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS auth_failure (
+          ip        TEXT NOT NULL,
+          failed_at INTEGER NOT NULL
+        )
+      `).run()
+      await db.prepare("CREATE INDEX IF NOT EXISTS idx_auth_failure_ip ON auth_failure(ip)").run()
+      await db.prepare("CREATE INDEX IF NOT EXISTS idx_auth_failure_failed_at ON auth_failure(failed_at)").run()
+    } catch {}
+    await db.prepare("UPDATE schema_version SET version = 4 WHERE store = 'main'").run()
   }
 }
 

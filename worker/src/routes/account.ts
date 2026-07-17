@@ -7,6 +7,7 @@ import {
 } from '../middleware'
 import { initDatabase } from '../db'
 import { sendEmail } from './email'
+import { checkAuthRateLimit, recordAuthFailure } from './rateLimit'
 
 const app = new Hono<Env>()
 
@@ -20,14 +21,15 @@ app.post('/account', async (c) => {
     }, 403)
   }
 
-  const body = await c.req.json<{ user: string; password: string }>()
-  if (!body.user || !body.password) {
+  const body = await c.req.json<any>()
+  const username = body.user || body.username
+  if (!username || !body.password) {
     return c.json({
       code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://ntfy.sh/docs',
     }, 400)
   }
 
-  if (body.user.length < 3 || body.user.length > 64) {
+  if (username.length < 3 || username.length > 64) {
     return c.json({
       code: 40001, http_code: 400, error: 'Username must be between 3 and 64 characters', link: 'https://ntfy.sh/docs',
     }, 400)
@@ -39,7 +41,7 @@ app.post('/account', async (c) => {
     }, 400)
   }
 
-  const existing = await DB.prepare('SELECT id FROM user WHERE user_name = ?').bind(body.user).first()
+  const existing = await DB.prepare('SELECT id FROM user WHERE user_name = ?').bind(username).first()
   if (existing) {
     return c.json({
       code: 40901, http_code: 409, error: 'Username already taken', link: 'https://ntfy.sh/docs',
@@ -52,7 +54,7 @@ app.post('/account', async (c) => {
 
   await DB.prepare(
     'INSERT INTO user (id, user_name, pass, role, prefs, sync_topic, provisioned, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(userId, body.user, passHash, 'user', '{}', '', 0, now).run()
+  ).bind(userId, username, passHash, 'user', '{}', '', 0, now).run()
 
   const token = await generateToken()
   const tokenExpires = now + 86400 * 365
@@ -63,7 +65,7 @@ app.post('/account', async (c) => {
 
   return c.json({
     id: userId,
-    user: body.user,
+    user: username,
     token,
     role: 'user',
     prefs: {},
@@ -121,6 +123,14 @@ app.post('/account/token', async (c) => {
   const { DB } = env(c)
   await initDatabase(DB)
 
+  const ip = c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for') || 'unknown'
+  const rateCheck = await checkAuthRateLimit(DB, ip)
+  if (!rateCheck.allowed) {
+    return c.json({
+      code: 42901, http_code: 429, error: 'Too many login attempts. Try again later.', link: 'https://ntfy.sh/docs',
+    }, 429)
+  }
+
   const body = await c.req.json<{ user: string; password: string; label?: string }>()
 
   if (!body.user || !body.password) {
@@ -134,6 +144,7 @@ app.post('/account/token', async (c) => {
   ).bind(body.user).first<{ id: string; user_name: string; pass: string; role: string }>()
 
   if (!user) {
+    await recordAuthFailure(DB, ip)
     return c.json({
       code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://ntfy.sh/docs',
     }, 401)
@@ -141,6 +152,7 @@ app.post('/account/token', async (c) => {
 
   const valid = await verifyPassword(body.password, user.pass)
   if (!valid) {
+    await recordAuthFailure(DB, ip)
     return c.json({
       code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://ntfy.sh/docs',
     }, 401)
@@ -599,7 +611,8 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
   const iterations64 = parts[1]
   const salt64 = parts[2]
   const hash64 = parts[3]
-  if (!algo || !iterations64 || !salt64 || !hash64 || algo !== 'scrypt') return false
+  if (!algo || !iterations64 || !salt64 || !hash64) return false
+  if (algo !== 'scrypt' && algo !== 'pbkdf2') return false
   const iterations = parseInt(atob(iterations64), 10)
   const salt = Uint8Array.from(atob(salt64), c => c.charCodeAt(0))
   const key = await crypto.subtle.importKey(
@@ -608,9 +621,9 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
   const derived = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256
   )
-  const expectedHash = atob(hash64)
-  const derivedHex = Array.from(new Uint8Array(derived)).map(b => b.toString(16).padStart(2, '0')).join('')
-  return derivedHex === expectedHash
+  const expectedBytes = Uint8Array.from(atob(hash64), c => c.charCodeAt(0))
+  const derivedBytes = new Uint8Array(derived)
+  return derivedBytes.length === expectedBytes.length && derivedBytes.every((b, i) => b === expectedBytes[i])
 }
 
 export { app as accountRoutes }

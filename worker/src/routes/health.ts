@@ -17,6 +17,14 @@ app.get('/health', async (c) => {
   }
 })
 
+app.get('/version', async (c) => {
+  return c.json({
+    version: '2.11.1',
+    commit: 'cf',
+    date: '',
+  })
+})
+
 app.get('/stats', async (c) => {
   try {
     const { DB } = env(c)

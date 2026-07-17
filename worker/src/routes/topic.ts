@@ -216,6 +216,8 @@ async function handleSubscribe(c: any): Promise<Response> {
 
   const since = c.req.query('since') || ''
   const poll = c.req.query('poll') || ''
+  const { KEEPALIVE_INTERVAL } = env(c)
+  const keepaliveMs = parseInt(KEEPALIVE_INTERVAL || '30000', 10)
 
   const topics = topicParam.split(',').map((t: string) => t.trim()).filter(Boolean)
 
@@ -259,7 +261,7 @@ async function handleSubscribe(c: any): Promise<Response> {
     return await stub.fetch(doUrl)
   }
 
-  return handleMultiTopicSubscribe(c, DB, TOPIC_DO, topics, suffix, since, poll)
+  return handleMultiTopicSubscribe(c, DB, TOPIC_DO, topics, suffix, since, poll, keepaliveMs)
 }
 
 async function handleMultiTopicSubscribe(
@@ -270,6 +272,7 @@ async function handleMultiTopicSubscribe(
   suffix: string,
   since: string,
   poll: string,
+  keepaliveMs: number,
 ): Promise<Response> {
   if (suffix === 'ws') {
     return c.json({ code: 40001, http_code: 400, error: 'WebSocket multi-topic not supported', link: 'https://ntfy.sh/docs' }, 400) as Response
@@ -378,7 +381,7 @@ async function handleMultiTopicSubscribe(
       ? `event: keepalive\ndata: {"event":"keepalive","topic":"${topics[0]}","time":${Date.now()}}\n\n`
       : `{"event":"keepalive","topic":"${topics[0]}","time":${Date.now()}}\n`
     writer.write(ka).catch(() => {})
-  }, 30000)
+  }, keepaliveMs)
 
   c.req.raw?.signal?.addEventListener('abort', () => {
     abortController.abort()
