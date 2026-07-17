@@ -1,5 +1,5 @@
 self.config = {
-  base_url: window.location.origin,
+  base_url: self.location.origin,
   app_root: "/",
   enable_login: true,
   require_login: false,
