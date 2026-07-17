@@ -2,18 +2,37 @@
 
 ## System Overview
 
-ntfy-cf is a self-hosted, Cloudflare-native clone of the [ntfy](https://ntfy.sh) push notification service. It uses four Cloudflare primitives:
+ntfy-cf is a Cloudflare-native reimplementation of [ntfy](https://ntfy.sh) — a simple HTTP-based pub-sub push notification service. It uses five Cloudflare primitives:
 
-| Component           | Purpose                                                          |
-| ------------------- | ---------------------------------------------------------------- |
-| **Cloudflare Workers** | HTTP API (Hono framework), request routing, business logic     |
-| **Durable Objects**    | Per-topic real-time connection management & message broadcasting |
-| **D1 Database**        | Relational persistence for messages, users, subscriptions        |
-| **Cloudflare Pages**   | React PWA front-end with service worker and offline support      |
+| Component | Purpose |
+|-----------|---------|
+| **Cloudflare Workers** | HTTP API (Hono framework), request routing, business logic |
+| **Durable Objects** | Per-topic real-time connection management & message broadcasting |
+| **D1 Database** | Relational persistence for messages, users, subscriptions |
+| **R2 Object Storage** | File attachment storage |
+| **Cloudflare Pages** | React PWA frontend with service worker and offline support |
 
-A shared TypeScript package (`packages/shared`) provides types and utilities consumed by both the worker and the web app.
+Additional integrations:
+- **Cloudflare Email Binding** — transactional emails (verification, password reset)
+- **Twilio** — phone call notifications
+- **Firebase Cloud Messaging (FCM)** — Android push notifications
 
----
+> This project was fully vibe-coded with **DeepSeek V4 Flash** and **opencode**.
+
+## Comparison to Original ntfy
+
+The original [ntfy](https://github.com/binwiederhier/ntfy) is a Go-based standalone server with embedded SQLite, optional PostgreSQL, and a React PWA frontend. This reimplementation replaces the Go backend entirely with Cloudflare Workers but keeps the frontend as a near-1:1 clone.
+
+| Aspect | Original (Go) | ntfy-cf (Workers) |
+|--------|---------------|-------------------|
+| Runtime | Standalone binary | Cloudflare Workers (edge) |
+| Real-time | In-memory Go topics + goroutines | Durable Objects |
+| Database | SQLite / PostgreSQL | Cloudflare D1 |
+| File store | Filesystem / S3 | Cloudflare R2 |
+| Email | SMTP client + server | Cloudflare Email binding |
+| Push | Firebase FCM + Web Push VAPID | FCM + Web Push VAPID |
+| Phone | Twilio | Twilio |
+| Frontend | React PWA (identical code) | React PWA (identical code) |
 
 ## Request Flow
 
@@ -40,27 +59,25 @@ A shared TypeScript package (`packages/shared`) provides types and utilities con
           │                  │  │  (real-time) │  │   endpoint)  │
           │  messages        │  │              │  └──────────────┘
           │  users           │  │  WebSocket   │
-          │  tokens          │  │  SSE         │
-          │  subscriptions   │  │  JSON stream │
-          └─────────────────┘  │  Raw stream  │
+          │  tokens          │  │  SSE         │  ┌──────────────┐
+          │  subscriptions   │  │  JSON stream │  │  R2 (files)  │
+          └─────────────────┘  │  Raw stream  │  └──────────────┘
                                 └──────────────┘
 ```
 
 ### Publish Flow
 
-```mermaid
-sequenceDiagram
-    Client->>Worker: PUT/POST /{topic} (with message body + headers)
-    Worker->>D1: Validate topic, check limits, INSERT message
-    Worker->>TopicDO: POST /publish (broadcast to subscribers)
-    TopicDO-->>WebSocket clients: broadcast JSON
-    TopicDO-->>SSE clients: broadcast SSE event
-    TopicDO-->>JSON stream clients: broadcast NDJSON
-    TopicDO-->>Raw stream clients: broadcast plain text
-    Worker->>D1: Query webpush_subscription_topic JOIN subscription
-    Worker->>Push Service: POST encrypted push payload
-    Push Service-->>Browser: deliver push
-```
+1. Client sends `PUT` or `POST` to `/{topic}` with plain text body and optional `X-*` headers
+2. Worker validates topic format and checks disallowed topics list
+3. Worker authenticates the request (optional; anonymous publish permitted)
+4. Worker enforces daily message limit (if configured) and message size limit
+5. If body exceeds size limit or `X-Filename` is set, body is stored as R2 attachment
+6. Worker inserts the message into D1 with full metadata
+7. Worker forwards the message to the TopicDO Durable Object for real-time broadcast
+8. Worker sends Web Push notifications to subscribed browsers (VAPID + RFC 8291 encryption)
+9. Worker sends FCM notifications for Android subscribers
+10. Worker triggers Twilio phone call if `X-Call` is set
+11. Returns `201 Created` with the message JSON
 
 ### Subscribe Flow
 
@@ -71,129 +88,73 @@ Client ──GET /{topic}/json─> Worker ──fetch──> TopicDO ──appli
 Client ──GET /{topic}/raw──> Worker ──fetch──> TopicDO ──text/plain──> Client
 ```
 
----
-
-## Component Relationships
+## Component Details
 
 ### Worker (`worker/src/index.ts`)
 
-Uses the **Hono** framework for routing. Registers route modules under `/v1` and `/`:
+Uses the **Hono** framework for routing. Global middleware: CORS, request logging, secure headers.
 
-| Prefix | Routes Module | Mounted At |
-| ------ | ------------- | ---------- |
-| `/v1`  | `health.ts`   | `/v1/health`, `/v1/stats` |
-| `/v1`  | `config.ts`   | `/v1/config`, `/v1/config.js` |
-| `/v1`  | `metrics.ts`  | `/v1/metrics` |
-| `/v1`  | `webpush.ts`  | `/v1/webpush` |
-| `/v1`  | `account.ts`  | `/v1/account` and sub-resources |
-| `/v1`  | `admin.ts`    | `/v1/users` and sub-resources |
-| `/`    | `topic.ts`    | `/{topic}` and sub-resources |
-
-Global middleware: CORS (all origins), request logging, secure headers.
+Special handling:
+- **WebSocket upgrades** are handled before Hono middleware to avoid corrupting 101 responses
+- **Static assets** fall through to Cloudflare Pages binding for SPA routing
+- **`Priority` header** (RFC 9218) is stripped to avoid Cloudflare edge 500 errors
+- **Cron trigger** runs every hour for expired message/attachment cleanup
 
 ### Durable Object — TopicDO (`worker/src/do/topic.ts`)
 
 One Durable Object instance per topic name (derived via `TOPIC_DO.idFromName(topic)`).
 
-Responsible for:
-- Maintaining a ring buffer of the last 100 messages per topic
+Responsibilities:
+- Ring buffer of the last 100 messages per topic
 - Managing persistent connections: WebSocket, SSE, JSON stream, raw stream
 - Broadcasting published messages to all active subscribers
-- Sending keepalive pings at a configurable interval (default 30 s)
-- Supporting poll-based subscriptions with configurable timeout
-- Cleaning up dead connections
+- Keepalive pings at configurable interval (default 30 s)
+- Poll-based subscriptions with configurable timeout
+- Scheduled message delivery via `alarm()` handler
+- Cleaning up dead connections on disconnect
 
-### Database Layer (`worker/src/db.ts`)
+### Database (`worker/src/db.ts`)
 
-- `initDatabase()` — called at the start of every request handler; runs schema migration if `schema_version` table is empty
+- `initDatabase()` — runs schema migration on first request
 - `getStats()` — returns aggregate message count
 - `incrementMessages()` — atomically increments the message counter
 
+Tables: `messages`, `message_stats`, `tier`, `user`, `user_access`, `user_token`, `user_phone`, `user_email`, `user_magic_link`, `webpush_subscription`, `webpush_subscription_topic`, `schema_version`.
+
 ### Middleware (`worker/src/middleware.ts`)
 
-Handles:
-- **Authentication**: Basic auth (username:password), Bearer token, raw token (`nk...`), query parameter `?auth=`
+- **Authentication**: Basic auth (`username:password`), Bearer token, raw token (`nk...`), query param `?auth=`
 - **Authorization**: `requireAuth()` / `requireAdmin()` guards
-- **Password hashing**: PBKDF2-SHA256 with scrypt-compatible encoding
-- **Token generation**: random hex tokens
-- **ID generation**: random alphanumeric, sequence IDs
+- **Password hashing**: PBKDF2-SHA256
+- **Token generation**: random 64-char hex tokens
+- **ID generation**: random 12-char alphanumeric, sortable sequence IDs
+- **HTML sanitization**: prevents XSS in message content
 
-### Web Front-end (`web/`)
+### Web Frontend (`web/`)
 
-React SPA built with Vite, Material UI, and `vite-plugin-pwa` for full PWA support. Features:
-- Topic subscription management
+React SPA built with Vite, Material UI 9, and `vite-plugin-pwa`. Near-identical clone of the original ntfy web app. Features:
+- Topic subscription management with IndexedDB persistence (Dexie)
 - Real-time message display via WebSocket/SSE/JSON stream
-- Web Push subscription via the Push API and `webpush` endpoint
-- Multi-language support (i18next)
-- IndexedDB-based offline storage (Dexie)
-- Configurable via `/config.js` — a dynamically generated JS file that populates `window.ntfyConfig`
+- Web Push subscription via Push API
+- 44 language translations (i18next)
+- Offline storage with IndexedDB
+- Light/dark/system theme with flash prevention
+- Service worker with Workbox precaching and push handling
+- Configurable via dynamically generated `/config.js`
 
----
+## Known Limitations vs Original ntfy
 
-## Data Flow
-
-### Publishing a Message
-
-1. Client sends `PUT` or `POST` to `/{topic}` with plain text body and optional `X-*` headers
-2. Worker validates topic format and disallowed topics list
-3. Worker enforces daily visitor message limit (if configured)
-4. Worker enforces message size limit
-5. Worker authenticates the request (optional; anonymous publish permitted)
-6. Worker inserts the message into D1 with full metadata
-7. Worker increments the global message counter
-7. Worker forwards the message to the TopicDO Durable Object for real-time broadcast
-8. Worker queries Web Push subscriptions for this topic and delivers encrypted push notifications
-9. Returns `201 Created` with the message JSON
-
-### Subscribing to a Topic
-
-1. Client requests `GET /{topic}/{format}` where format is `ws`, `sse`, `json`, or `raw`
-2. Worker validates the topic
-3. Worker forwards the request to the TopicDO Durable Object
-4. TopicDO creates a connection, sends an `open` event, then replays past messages (if `?since=` specified)
-5. TopicDO keeps the connection alive with periodic keepalive messages
-6. When `?poll=` is specified, connection auto-closes after the timeout
-
-### Web Push Delivery
-
-1. On publish, the worker queries `webpush_subscription_topic` JOIN `webpush_subscription` for subscriptions matching the topic
-2. For each subscription, the worker performs RFC 8291 (Web Push Encryption) using ECDH key agreement, HKDF key derivation, and AES-128-GCM encryption
-3. Encrypted payloads are POSTed to the browser push service endpoint
-
----
-
-## Deployment Architecture
-
-```
-Internet
-    │
-    ├── https://ntfy.example.com ──> Cloudflare Workers (API)
-    │       │
-    │       ├── D1 Database (ntfy-cf-db) — primary data store
-    │       └── Durable Objects (TopicDO) — real-time pub/sub
-    │
-    └── https://ntfy.example.com ──> Cloudflare Pages (Web UI)
-            │
-            └── Static assets (React SPA, service worker)
-```
-
-### Worker Configuration (`wrangler.toml`)
-
-- **Worker name**: `ntfy-cf-api`
-- **D1 binding**: `DB` → database `ntfy-cf-db`
-- **DO binding**: `TOPIC_DO` → class `TopicDO`
-- **Compatibility date**: 2025-04-01 (with `nodejs_compat` flag)
-- **Environment variables**: `BASE_URL`, `ENABLE_SIGNUP`, `ENABLE_LOGIN`, `DISALLOWED_TOPICS`, `ACCESS_CONTROL_ALLOW_ORIGIN`, `VISITOR_SUBSCRIPTION_LIMIT`, `VISITOR_MESSAGE_DAILY_LIMIT`, `MESSAGE_SIZE_LIMIT`, `KEEPALIVE_INTERVAL`
-- **Secrets** (set via `wrangler secret`): `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`
-
-### CI/CD Pipeline (`.github/workflows/ci.yml`)
-
-Three jobs run on push/PR to `main`:
-
-1. **test** — `npm ci`, `npm run build`, `npm test` on Node.js 22
-2. **deploy-worker** — Uses `wrangler-action` to deploy the Worker (main branch only)
-3. **deploy-web** — Builds the web app and deploys to Cloudflare Pages via `wrangler pages deploy web/dist --project-name=ntfy-cf`
-
-### Web Push Keys
-
-VAPID keys for Web Push are stored as secrets and injected at deploy time. The public key is also exposed via `v1/config` and `config.js` for client-side subscription.
+| Feature | Status | Reason |
+|---------|--------|--------|
+| UnifiedPush | ❌ | Not implemented |
+| Matrix push gateway | ❌ | Not implemented |
+| SMTP email receiving | ❌ | Not implemented |
+| Message templates (Grafana, etc.) | ❌ | Not implemented |
+| Upstream forwarding | ❌ | Not implemented |
+| Per-second rate limiting (burst/replenish) | ❌ | Not implemented |
+| `X-Actions` publish header | ❌ | Not implemented |
+| WebSocket auth via `?auth=` param | ❌ | Not implemented |
+| FCM subscription persistence in DB | ❌ | Not implemented |
+| Auth failure rate limiting | ❌ | Not implemented |
+| Stripe billing webhook | ⚠️ Stubbed | Integration not complete |
+| Database indexes | ⚠️ Partial | Missing 4 indexes vs original |
