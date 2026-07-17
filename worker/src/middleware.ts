@@ -27,7 +27,7 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16))
-  const iterations = 600000
+  const iterations = 100000
   const key = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']
   )
