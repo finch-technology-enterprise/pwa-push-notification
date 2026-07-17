@@ -1,5 +1,5 @@
 {
-  "name": "ntfy-cf",
+  "name": "pwa-push-notification",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -27,8 +27,8 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/react-dom": "^19.2.3",
-    "concurrently": "^9.1.0",
-    "typescript": "^5.7.0"
+    "concurrently": "^9.2.4",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "web-push": "^3.6.7"
