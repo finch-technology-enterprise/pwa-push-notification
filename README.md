@@ -93,15 +93,15 @@ npx web-push generate-vapid-keys
 #   WEB_PUSH_PRIVATE_KEY=<key>
 
 # Create D1 database
-wrangler d1 create ntfy-cf-db
-# Update database_id in wrangler.toml
+npx wrangler d1 create ntfy-cf-db
+# Copy the database_id output and update wrangler.toml
 
-# Run both API + web app
+# Run both API + web app concurrently
 npm run dev
 ```
 
 - API: `http://localhost:8787`
-- Web app: `http://localhost:3000`
+- Web app: `http://localhost:3000` (proxies API calls to port 8787)
 
 ## Configuration
 
@@ -124,6 +124,9 @@ npm run dev
 | `KEEPALIVE_INTERVAL` | `30000` | Keepalive interval in ms |
 | `VISITOR_SUBSCRIPTION_LIMIT` | `30` | Max Web Push subs per IP |
 | `VISITOR_MESSAGE_DAILY_LIMIT` | `0` | Max messages per user per day (0 = unlimited) |
+| `BUILD_VERSION` | `2.11.1` | Version reported by `GET /v1/version` |
+| `BUILD_COMMIT` | `cf` | Commit hash reported by `GET /v1/version` |
+| `BUILD_DATE` | `""` | Build date reported by `GET /v1/version` |
 
 ## Project Structure
 
@@ -141,15 +144,16 @@ npm run dev
 │   │       ├── metrics.ts    # /v1/metrics (Prometheus)
 │   │       ├── topic.ts      # Publish/subscribe/delete/clear
 │   │       ├── webpush.ts    # Web Push subscription registration
-│   │       ├── account.ts    # Account signup/login/tokens/settings
+│   │       ├── account.ts    # Account, tokens, settings, FCM registration
 │   │       ├── admin.ts      # User management & access control
 │   │       ├── attachment.ts # File upload/download via R2
 │   │       ├── billing.ts    # Tier listing & billing stubs
 │   │       ├── cleanup.ts    # Cron-based expired message cleanup
 │   │       ├── email.ts      # Email sending via Cloudflare Email
-│   │       ├── fcm.ts        # Firebase Cloud Messaging
+│   │       ├── fcm.ts        # Firebase Cloud Messaging sender
 │   │       ├── call.ts       # Twilio phone calls
-│   │       └── rateLimit.ts  # Rate limiting helpers
+│   │       ├── matrix.ts     # Matrix push gateway
+│   │       └── rateLimit.ts  # Rate limiting helpers (token-bucket, auth, daily)
 │   ├── migrations/
 │   │   └── 0001_initial.sql  # SQL schema
 │   ├── package.json
@@ -175,11 +179,24 @@ npm run dev
 
 ```bash
 # Deploy the API worker
-npm run deploy:worker
+npm run deploy
 
-# Deploy the web frontend
-npm run deploy:web
+# Build and deploy the web frontend
+npm run build:web
+npx wrangler pages deploy web/build --project-name ntfy-pwa-push
 ```
+
+## Available Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Run both API (port 8787) and web (port 3000) concurrently |
+| `npm run dev:worker` | Run API worker only |
+| `npm run dev:web` | Run web frontend only |
+| `npm run build` | Build both worker and web |
+| `npm run deploy` | Deploy API worker to Cloudflare |
+| `npm test` | Run all tests (worker + web) |
+| `npm run lint` | Run linting |
 
 ## License
 
