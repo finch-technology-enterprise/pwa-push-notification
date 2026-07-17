@@ -12,6 +12,7 @@ import { adminRoutes } from './routes/admin'
 import { topicRoutes } from './routes/topic'
 import { attachmentRoutes } from './routes/attachment'
 import { billingRoutes } from './routes/billing'
+import { matrixRoutes } from './routes/matrix'
 import { TOPIC_REGEX } from './types'
 import { buildConfigJs } from './routes/config'
 import { initDatabase } from './db'
@@ -72,6 +73,7 @@ app.route('/v1', adminRoutes)
 app.route('/', attachmentRoutes)
 app.route('/', topicRoutes)
 app.route('/v1', billingRoutes)
+app.route('/', matrixRoutes)
 
 // Wrap the fetch handler so that non-API requests fall through to the static assets (frontend SPA).
 // With run_worker_first = true, ALL requests reach the Worker; we try assets first for non-API

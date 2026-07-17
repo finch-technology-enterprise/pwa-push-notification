@@ -4,7 +4,7 @@ import type { Env } from '../index'
 import { authenticate, generateId, generateSequenceId, nowUnix, parseTags, parseActions, sanitizeHtml } from '../middleware'
 import { initDatabase, incrementMessages } from '../db'
 import { TOPIC_REGEX, DISALLOWED_TOPICS_DEFAULT } from '../types'
-import type { PublishMessage } from '../types'
+import type { PublishMessage, AuthInfo } from '../types'
 import { checkMessageDailyLimit } from './rateLimit'
 
 const app = new Hono<Env>()
@@ -44,6 +44,8 @@ async function handleRootPublish(c: any): Promise<Response> {
   if (body.email) headers.set('X-Email', String(body.email))
   if (body.delay !== undefined && body.delay !== null) headers.set('X-Delay', String(body.delay))
   if (body.event) headers.set('X-Event', String(body.event))
+  if (body.poll_id !== undefined) headers.set('X-Poll-ID', String(body.poll_id))
+  if (body.unifiedpush) headers.set('X-UnifiedPush', 'true')
 
   const message = typeof body.message === 'string' ? body.message : ''
   const newReq = new Request(`${new URL(c.req.url).origin}/${topic}`, {
@@ -86,6 +88,13 @@ async function handleUpdate(c: any): Promise<Response> {
 
 async function handlePublish(c: any): Promise<Response> {
   const topic = c.req.param('topic') as string
+
+  // UnifiedPush discovery: GET /{topic}?up=1 returns UP discovery JSON
+  const isUpDiscovery = c.req.method === 'GET' && (c.req.query('up') === '1' || c.req.query('unifiedpush') === '1')
+  if (isUpDiscovery) {
+    return c.json({ unifiedpush: { version: 1 } })
+  }
+
   const { DB, TOPIC_DO, DISALLOWED_TOPICS, MESSAGE_SIZE_LIMIT, VISITOR_MESSAGE_DAILY_LIMIT } = env(c)
   await initDatabase(DB)
 
@@ -172,6 +181,8 @@ async function handlePublish(c: any): Promise<Response> {
   const sequenceIdX = readParam(c, 'X-Sequence-ID', 'Sequence-ID', 'sid')
   const pollId = readParam(c, 'X-Poll-ID', 'Poll-ID') || ''
   const unifiedPush = readBool(c, 'X-UnifiedPush', 'UnifiedPush', 'UP')
+  const emailTarget = readParam(c, 'X-Email', 'Email', 'e')
+  const callTarget = readParam(c, 'X-Call', 'Call')
 
   // Use custom sequence ID if provided, matching original header spec
   const finalSeqId = sequenceIdX || seqId
@@ -235,11 +246,41 @@ async function handlePublish(c: any): Promise<Response> {
         await sendFcmNotifications(DB, topic, publishMsg, FCM_SERVER_KEY)
       } catch {}
     }
+    if (emailTarget && auth.authenticated) {
+      try {
+        const { EMAIL } = env(c)
+        const resolvedEmail = await resolveEmailTarget(DB, emailTarget, auth)
+        if (resolvedEmail) {
+          const { sendEmail } = await import('./email')
+          await sendEmail(EMAIL, {
+            to: resolvedEmail,
+            from: { email: 'notify@finchtech.my', name: 'ntfy' },
+            subject: title || `ntfy: ${topic}`,
+            text: msgBody || 'You received a notification',
+          })
+        }
+      } catch {}
+    }
+    const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER } = env(c)
     try {
-      const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER } = env(c)
       const { sendPhoneNotifications } = await import('./call')
       await sendPhoneNotifications(DB, topic, publishMsg, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER)
     } catch {}
+    if (callTarget && auth.authenticated) {
+      try {
+        const resolvedPhone = await resolveCallTarget(DB, callTarget, auth)
+        if (resolvedPhone && TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_FROM_NUMBER) {
+          const message = msgBody || title || 'Notification from ntfy'
+          const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">${sanitizeHtml(message)}</Say></Response>`
+          const authStr = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)
+          await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`, {
+            method: 'POST',
+            headers: { 'Authorization': `Basic ${authStr}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ To: resolvedPhone, From: TWILIO_FROM_NUMBER, Twiml: twiml }).toString(),
+          })
+        }
+      } catch {}
+    }
   }
 
   const resp = formatMessageResponse(publishMsg)
@@ -1075,6 +1116,26 @@ function readParam(c: any, ...names: string[]): string | null {
     if (q) return q
   }
   return null
+}
+
+async function resolveEmailTarget(db: D1Database, target: string, auth: AuthInfo): Promise<string | null> {
+  if (target.toLowerCase() === 'true' && auth.authenticated) {
+    const row = await db.prepare(
+      'SELECT email FROM user_email WHERE user_id = ? ORDER BY is_primary DESC LIMIT 1'
+    ).bind(auth.userId).first<{ email: string }>()
+    return row?.email || null
+  }
+  return target
+}
+
+async function resolveCallTarget(db: D1Database, target: string, auth: AuthInfo): Promise<string | null> {
+  if (target.toLowerCase() === 'true' && auth.authenticated) {
+    const row = await db.prepare(
+      'SELECT phone_number FROM user_phone WHERE user_id = ? LIMIT 1'
+    ).bind(auth.userId).first<{ phone_number: string }>()
+    return row?.phone_number || null
+  }
+  return target
 }
 
 function readBool(c: any, ...names: string[]): boolean {
