@@ -294,9 +294,42 @@ app.post('/account/subscription', async (c) => {
 app.patch('/account/subscription', async (c) => {
   const { DB } = env(c)
   await initDatabase(DB)
-  await requireAuth(c)
+  const auth = await requireAuth(c)
 
-  return c.json({ success: true })
+  const body = await c.req.json<{ topic: string; read?: boolean; write?: boolean }>()
+  if (!body.topic) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  const read = body.read !== undefined ? (body.read ? 1 : 0) : undefined
+  const write = body.write !== undefined ? (body.write ? 1 : 0) : undefined
+
+  if (read === undefined && write === undefined) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Nothing to update', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  const existing = await DB.prepare(
+    'SELECT read_access, write_access FROM user_access WHERE user_id = ? AND topic = ?'
+  ).bind(auth.userId, body.topic).first<{ read_access: number; write_access: number }>()
+
+  if (!existing) {
+    return c.json({
+      code: 40401, http_code: 404, error: 'Subscription not found', link: 'https://ntfy.sh/docs',
+    }, 404)
+  }
+
+  const newRead = read ?? existing.read_access
+  const newWrite = write ?? existing.write_access
+
+  await DB.prepare(
+    'UPDATE user_access SET read_access = ?, write_access = ? WHERE user_id = ? AND topic = ?'
+  ).bind(newRead, newWrite, auth.userId, body.topic).run()
+
+  return c.json({ success: true, topic: body.topic, read: newRead === 1, write: newWrite === 1 })
 })
 
 app.delete('/account/subscription', async (c) => {
@@ -316,15 +349,49 @@ app.delete('/account/subscription', async (c) => {
 app.post('/account/reservation', async (c) => {
   const { DB } = env(c)
   await initDatabase(DB)
-  await requireAuth(c)
+  const auth = await requireAuth(c)
 
-  return c.json({ success: true, message: 'Reservations not yet implemented' })
+  const body = await c.req.json<{ topic: string }>()
+  if (!body.topic) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  const existing = await DB.prepare(
+    'SELECT owner_user_id FROM user_access WHERE topic = ? AND owner_user_id IS NOT NULL AND owner_user_id != \'\''
+  ).bind(body.topic).first<{ owner_user_id: string }>()
+
+  if (existing) {
+    return c.json({
+      code: 40901, http_code: 409, error: 'Topic already reserved', link: 'https://ntfy.sh/docs',
+    }, 409)
+  }
+
+  await DB.prepare(
+    `INSERT INTO user_access (user_id, topic, read_access, write_access, owner_user_id, provisioned)
+     VALUES (?, ?, 1, 1, ?, 0)
+     ON CONFLICT(user_id, topic) DO UPDATE SET owner_user_id = ?, read_access = 1, write_access = 1`
+  ).bind(auth.userId, body.topic, auth.userId, auth.userId).run()
+
+  return c.json({ success: true, topic: body.topic })
 })
 
 app.delete('/account/reservation', async (c) => {
   const { DB } = env(c)
   await initDatabase(DB)
-  await requireAuth(c)
+  const auth = await requireAuth(c)
+
+  const topic = c.req.query('topic') || (await c.req.json().catch(() => ({}))).topic
+  if (!topic) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  await DB.prepare(
+    'DELETE FROM user_access WHERE user_id = ? AND topic = ? AND owner_user_id = ?'
+  ).bind(auth.userId, topic, auth.userId).run()
 
   return c.json({ success: true })
 })

@@ -93,7 +93,7 @@ export const throwAppError = async (response) => {
 
 export const fetchOrThrow = async (url, options) => {
   const response = await fetch(url, options);
-  if (response.status !== 200) {
+  if (!response.ok) {
     await throwAppError(response);
   }
   return response; // Promise!

@@ -143,6 +143,23 @@ CREATE TABLE IF NOT EXISTS webpush_subscription_topic (
 );
 CREATE INDEX IF NOT EXISTS idx_wp_topic ON webpush_subscription_topic(topic);
 
+CREATE TABLE IF NOT EXISTS fcm_subscription (
+    id          TEXT PRIMARY KEY,
+    token       TEXT NOT NULL UNIQUE,
+    user_id     TEXT NOT NULL,
+    subscriber_ip TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS fcm_subscription_topic (
+    subscription_id TEXT NOT NULL,
+    topic           TEXT NOT NULL,
+    PRIMARY KEY (subscription_id, topic),
+    FOREIGN KEY (subscription_id) REFERENCES fcm_subscription(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_fcm_topic ON fcm_subscription_topic(topic);
+
 CREATE TABLE IF NOT EXISTS schema_version (
     store   TEXT PRIMARY KEY,
     version INTEGER NOT NULL
@@ -155,6 +172,7 @@ export interface DbMessage {
   time: number
   event: string
   expires: number
+  scheduled_for: number
   topic: string
   message: string
   title: string
@@ -216,6 +234,41 @@ export async function initDatabase(db: D1Database): Promise<void> {
       await db.prepare(stmt + ';').run()
     }
     await db.prepare("INSERT INTO schema_version (store, version) VALUES ('main', 1)").run()
+    existing = { version: 1 }
+  }
+
+  if (existing.version === 1) {
+    try {
+      await db.prepare("ALTER TABLE messages ADD COLUMN scheduled_for INTEGER NOT NULL DEFAULT 0").run()
+    } catch {
+      // Column may already exist from a partial migration
+    }
+    await db.prepare("UPDATE schema_version SET version = 2 WHERE store = 'main'").run()
+  }
+
+  if (existing.version === 2) {
+    try {
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS fcm_subscription (
+          id          TEXT PRIMARY KEY,
+          token       TEXT NOT NULL UNIQUE,
+          user_id     TEXT NOT NULL,
+          subscriber_ip TEXT NOT NULL,
+          created_at  INTEGER NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+        )
+      `).run()
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS fcm_subscription_topic (
+          subscription_id TEXT NOT NULL,
+          topic           TEXT NOT NULL,
+          PRIMARY KEY (subscription_id, topic),
+          FOREIGN KEY (subscription_id) REFERENCES fcm_subscription(id) ON DELETE CASCADE
+        )
+      `).run()
+      await db.prepare("CREATE INDEX IF NOT EXISTS idx_fcm_topic ON fcm_subscription_topic(topic)").run()
+    } catch {}
+    await db.prepare("UPDATE schema_version SET version = 3 WHERE store = 'main'").run()
   }
 }
 

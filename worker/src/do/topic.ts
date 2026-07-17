@@ -16,21 +16,47 @@ export class TopicDO {
   private env: unknown
   private connections: Map<string, Connection> = new Map()
   private messages: PublishMessage[] = []
+  private scheduledMessages: PublishMessage[] = []
   private maxMessages = 100
   private keepaliveInterval = 30_000
+  private initialized = false
 
   constructor(state: DurableObjectState, env: unknown) {
     this.state = state
     this.env = env
   }
 
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) return
+    this.initialized = true
+    const stored = await this.state.storage.get<PublishMessage[]>('messages')
+    if (stored) this.messages = stored
+    const scheduled = await this.state.storage.get<PublishMessage[]>('scheduledMessages')
+    if (scheduled) this.scheduledMessages = scheduled
+  }
+
+  private async persistMessages(): Promise<void> {
+    await this.state.storage.put('messages', this.messages)
+  }
+
+  private async persistScheduledMessages(): Promise<void> {
+    await this.state.storage.put('scheduledMessages', this.scheduledMessages)
+  }
+
   async fetch(request: Request): Promise<Response> {
+    await this.ensureInitialized()
     const url = new URL(request.url)
     const path = url.pathname
     const topic = url.searchParams.get('topic') || ''
+    const since = url.searchParams.get('since') || ''
 
     if (path.endsWith('/ws') || request.headers.get('Upgrade') === 'websocket') {
-      return this.handleWebSocket(request, topic)
+      try {
+        return await this.handleWebSocket(request, topic, since)
+      } catch (e) {
+        console.error(`[TopicDO:${topic}] WebSocket error:`, e)
+        return new Response(`WebSocket error: ${e}`, { status: 500 })
+      }
     }
 
     if (path.endsWith('/sse')) {
@@ -52,7 +78,7 @@ export class TopicDO {
     return new Response('Not found', { status: 404 })
   }
 
-  private async handleWebSocket(request: Request, topic: string): Promise<Response> {
+  private async handleWebSocket(request: Request, topic: string, sinceParam: string): Promise<Response> {
     const pair = new WebSocketPair()
     const client = pair[0]
     const server = pair[1]
@@ -72,8 +98,8 @@ export class TopicDO {
       try {
         const data = JSON.parse(event.data as string)
         if (data.type === 'poll') {
-          const since = data.since || 'all'
-          this.sendPastMessages(conn, since)
+          const s = data.since || 'all'
+          this.sendPastMessages(conn, s)
         }
       } catch {
       }
@@ -92,7 +118,7 @@ export class TopicDO {
     }, this.keepaliveInterval)
 
     this.sendOpenEvent(conn)
-    this.sendPastMessages(conn, 'all')
+    this.sendPastMessages(conn, sinceParam || 'all')
 
     return new Response(null, { status: 101, webSocket: client })
   }
@@ -235,14 +261,45 @@ export class TopicDO {
       },
     })
   }
-
   private async handlePublish(request: Request, topic: string): Promise<Response> {
     try {
       const msg: PublishMessage = await request.json()
+      const now = Math.floor(Date.now() / 1000)
+
+      if (msg.event === 'message_delete') {
+        const targetId = msg.poll_id || msg.id
+        this.messages = this.messages.filter(m => m.id !== targetId)
+        await this.persistMessages()
+        this.broadcast(msg)
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (msg.event === 'message_clear') {
+        this.messages = []
+        await this.persistMessages()
+        this.broadcast(msg)
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (msg.scheduled_for && msg.scheduled_for > now) {
+        this.scheduledMessages.push(msg)
+        this.scheduledMessages.sort((a, b) => (a.scheduled_for || 0) - (b.scheduled_for || 0))
+        await this.persistScheduledMessages()
+        this.setNextAlarm()
+        return new Response(JSON.stringify({ success: true, scheduled: true }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
       this.messages.push(msg)
       if (this.messages.length > this.maxMessages) {
         this.messages = this.messages.slice(-this.maxMessages)
       }
+      await this.persistMessages()
       this.broadcast(msg)
       return new Response(JSON.stringify({ success: true }), {
         headers: { 'Content-Type': 'application/json' },
@@ -348,19 +405,32 @@ export class TopicDO {
   }
 
   private getMessagesSince(since: string): PublishMessage[] {
-    if (!since || since === 'all') return [...this.messages]
+    const now = Math.floor(Date.now() / 1000)
+    const msgs = this.messages.filter(m => !m.scheduled_for || m.scheduled_for <= now)
+
+    if (!since || since === 'all') return [...msgs]
 
     const sinceTime = parseInt(since, 10)
     if (!isNaN(sinceTime)) {
-      return this.messages.filter(m => m.time > sinceTime)
+      return msgs.filter(m => m.time > sinceTime)
     }
 
-    const idx = this.messages.findIndex(m => m.id === since)
+    const idx = msgs.findIndex(m => m.id === since)
     if (idx !== -1) {
-      return this.messages.slice(idx + 1)
+      return msgs.slice(idx + 1)
     }
 
     return []
+  }
+
+  private setNextAlarm(): void {
+    const next = this.scheduledMessages[0]
+    if (next?.scheduled_for) {
+      const alarmTime = next.scheduled_for * 1000
+      if (alarmTime > Date.now()) {
+        this.state.storage.setAlarm(alarmTime)
+      }
+    }
   }
 
   private cleanupConnection(id: string): void {
@@ -382,12 +452,30 @@ export class TopicDO {
   }
 
   async alarm(): Promise<void> {
+    await this.ensureInitialized()
+    const now = Math.floor(Date.now() / 1000)
+
+    const due = this.scheduledMessages.filter(m => m.scheduled_for && m.scheduled_for <= now)
+    this.scheduledMessages = this.scheduledMessages.filter(m => !m.scheduled_for || m.scheduled_for > now)
+
+    for (const msg of due) {
+      this.messages.push(msg)
+      if (this.messages.length > this.maxMessages) {
+        this.messages = this.messages.slice(-this.maxMessages)
+      }
+      this.broadcast(msg)
+    }
+
     this.messages = this.messages.filter(m => {
       if (m.expires && m.expires > 0) {
-        return Date.now() / 1000 < m.expires
+        return now < m.expires
       }
       return true
     })
+
+    await this.persistMessages()
+    await this.persistScheduledMessages()
+    this.setNextAlarm()
   }
 }
 

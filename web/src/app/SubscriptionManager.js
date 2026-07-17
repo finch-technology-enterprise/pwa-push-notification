@@ -243,7 +243,11 @@ export class SubscriptionManager {
   }
 
   async deleteNotification(notificationId) {
+    const existing = await this.db.notifications.get(notificationId);
     await this.db.notifications.delete(notificationId);
+    if (existing?.sequenceId) {
+      this.trackDismissed(existing.subscriptionId, existing.sequenceId);
+    }
   }
 
   async deleteNotificationBySequenceId(subscriptionId, sequenceId) {
@@ -290,6 +294,34 @@ export class SubscriptionManager {
 
   async pruneNotifications(thresholdTimestamp) {
     await this.db.notifications.where("time").below(thresholdTimestamp).delete();
+  }
+
+  trackDismissed(subscriptionId, sequenceId) {
+    try {
+      const key = `dismissed_${subscriptionId}`;
+      const raw = localStorage.getItem(key);
+      const set = raw ? new Set(JSON.parse(raw)) : new Set();
+      set.add(sequenceId);
+      localStorage.setItem(key, JSON.stringify([...set]));
+    } catch {}
+  }
+
+  isDismissed(subscriptionId, sequenceId) {
+    try {
+      const key = `dismissed_${subscriptionId}`;
+      const raw = localStorage.getItem(key);
+      if (!raw) return false;
+      const set = new Set(JSON.parse(raw));
+      return set.has(sequenceId);
+    } catch {
+      return false;
+    }
+  }
+
+  clearDismissed(subscriptionId) {
+    try {
+      localStorage.removeItem(`dismissed_${subscriptionId}`);
+    } catch {}
   }
 }
 

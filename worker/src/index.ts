@@ -10,6 +10,7 @@ import { accountRoutes } from './routes/account'
 import { adminRoutes } from './routes/admin'
 import { topicRoutes } from './routes/topic'
 import { attachmentRoutes } from './routes/attachment'
+import { TOPIC_REGEX } from './types'
 
 export type Env = {
   Bindings: {
@@ -31,6 +32,10 @@ export type Env = {
     KEEPALIVE_INTERVAL?: string
     ATTACHMENT_FILE_SIZE_LIMIT?: string
     ATTACHMENT_TOTAL_SIZE_LIMIT?: string
+    FCM_SERVER_KEY?: string
+    TWILIO_ACCOUNT_SID?: string
+    TWILIO_AUTH_TOKEN?: string
+    TWILIO_FROM_NUMBER?: string
   }
 }
 
@@ -56,9 +61,13 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
 
-    // For GET requests to non-API paths, try static assets first so the SPA handles its own routes.
+    const SUBSCRIBE_SUFFIXES = ['/json', '/ws', '/sse', '/raw', '/auth']
+    const isSubscribePath = SUBSCRIBE_SUFFIXES.some(s => url.pathname.endsWith(s))
+
+    // For GET requests to non-API paths that aren't topic subscription paths,
+    // try static assets first so the SPA handles its own routes.
     // Falls through to Hono if the asset doesn't exist (404).
-    if (request.method === 'GET' && !url.pathname.startsWith('/v1/')) {
+    if (request.method === 'GET' && !url.pathname.startsWith('/v1/') && !isSubscribePath) {
       try {
         const assets = (env as any).ASSETS as Fetcher
         const assetResponse = await assets.fetch(request)
@@ -77,8 +86,38 @@ export default {
       }
     }
 
-    // Let Hono try to match an API or topic route
-    return await app.fetch(request, env, ctx)
+    // Handle WebSocket upgrades directly, bypassing Hono middleware (cors/secureHeaders can corrupt 101 responses)
+    const upgradeHeader = request.headers.get('Upgrade')
+    if (request.method === 'GET' && upgradeHeader === 'websocket') {
+      const parts = url.pathname.split('/').filter(Boolean)
+      if (parts.length >= 2 && parts[1] === 'ws') {
+        const topic = parts[0]!
+        if (TOPIC_REGEX.test(topic)) {
+          const bindings = env as unknown as Env['Bindings']
+          const doId = bindings.TOPIC_DO.idFromName(topic)
+          const stub = bindings.TOPIC_DO.get(doId)
+          const since = url.searchParams.get('since') || ''
+          return await stub.fetch(new Request(`http://do/ws?topic=${topic}&since=${since}`, {
+            method: 'GET',
+            headers: request.headers,
+          }))
+        }
+      }
+    }
+
+    // Strip Priority header (RFC 9218) — Cloudflare edge returns 500 on PUT + Priority
+    const sanitized = new Headers(request.headers)
+    sanitized.delete('priority')
+    const cleaned = new Request(request, { headers: sanitized })
+
+    return await app.fetch(cleaned, env, ctx)
+  },
+
+  async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const bindings = env as unknown as Env['Bindings']
+    const { handleScheduledCleanup } = await import('./routes/cleanup')
+    const result = await handleScheduledCleanup(bindings.DB, bindings.ATTACHMENTS)
+    console.log('[Cleanup]', JSON.stringify(result))
   },
 }
 

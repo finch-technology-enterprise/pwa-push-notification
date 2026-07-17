@@ -9,13 +9,25 @@ const app = new Hono<Env>()
 app.get('/users', async (c) => {
   const { DB } = env(c)
   await initDatabase(DB)
-  const auth = await requireAdmin(c)
+  await requireAdmin(c)
+
+  const page = Math.max(1, parseInt(c.req.query('page') || '1', 10))
+  const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '50', 10)))
+  const offset = (page - 1) * limit
+
+  const countResult = await DB.prepare(
+    'SELECT COUNT(*) as total FROM user WHERE deleted IS NULL'
+  ).first<{ total: number }>()
+  const total = countResult?.total ?? 0
 
   const users = await DB.prepare(
-    'SELECT id, user_name, role, prefs, sync_topic, created FROM user WHERE deleted IS NULL ORDER BY created DESC LIMIT 100'
-  ).all()
+    'SELECT id, user_name, role, prefs, sync_topic, created FROM user WHERE deleted IS NULL ORDER BY created DESC LIMIT ? OFFSET ?'
+  ).bind(limit, offset).all()
 
   return c.json({
+    total,
+    page,
+    limit,
     users: (users.results || []).map((u: any) => ({
       id: u.id,
       user: u.user_name,
@@ -23,6 +35,62 @@ app.get('/users', async (c) => {
       prefs: JSON.parse(u.prefs || '{}'),
       sync_topic: u.sync_topic,
       created: u.created,
+    })),
+  })
+})
+
+app.get('/users/:id', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  await requireAdmin(c)
+
+  const userId = c.req.param('id')
+  const user = await DB.prepare(
+    'SELECT id, user_name, role, prefs, sync_topic, tier_id, stats_messages, stats_emails, stats_calls, created FROM user WHERE id = ? AND deleted IS NULL'
+  ).bind(userId).first<any>()
+
+  if (!user) {
+    return c.json({
+      code: 40401, http_code: 404, error: 'User not found', link: 'https://ntfy.sh/docs',
+    }, 404)
+  }
+
+  const emails = await DB.prepare(
+    'SELECT email, is_primary FROM user_email WHERE user_id = ?'
+  ).bind(userId).all()
+
+  const phones = await DB.prepare(
+    'SELECT phone_number FROM user_phone WHERE user_id = ?'
+  ).bind(userId).all()
+
+  const tokens = await DB.prepare(
+    'SELECT token, label, last_access, last_origin, expires FROM user_token WHERE user_id = ?'
+  ).bind(userId).all()
+
+  const access = await DB.prepare(
+    'SELECT topic, read_access, write_access, owner_user_id FROM user_access WHERE user_id = ?'
+  ).bind(userId).all()
+
+  return c.json({
+    id: user.id,
+    user: user.user_name,
+    role: user.role,
+    prefs: JSON.parse(user.prefs || '{}'),
+    sync_topic: user.sync_topic,
+    tier_id: user.tier_id,
+    stats: {
+      messages: user.stats_messages,
+      emails: user.stats_emails,
+      calls: user.stats_calls,
+    },
+    created: user.created,
+    emails: (emails.results || []).map((r: any) => ({ email: r.email, primary: r.is_primary === 1 })),
+    phone_numbers: (phones.results || []).map((r: any) => r.phone_number),
+    tokens: (tokens.results || []).map((r: any) => ({
+      label: r.label, last_access: r.last_access, last_origin: r.last_origin, expires: r.expires,
+    })),
+    access: (access.results || []).map((r: any) => ({
+      topic: r.topic, read: r.read_access === 1, write: r.write_access === 1, owner: r.owner_user_id,
     })),
   })
 })

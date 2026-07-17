@@ -3,6 +3,7 @@ import { env } from 'hono/adapter'
 import type { Env } from '../index'
 import { authenticate, generateId, nowUnix } from '../middleware'
 import { initDatabase } from '../db'
+import { checkSubscriptionLimit } from './rateLimit'
 
 const app = new Hono<Env>()
 
@@ -29,19 +30,14 @@ app.post('/webpush', async (c) => {
 
   const clientIp = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
 
-  const subLimit = parseInt(VISITOR_SUBSCRIPTION_LIMIT || '30', 10)
-  if (subLimit > 0) {
-    const count = await DB.prepare(
-      'SELECT COUNT(*) as cnt FROM webpush_subscription WHERE subscriber_ip = ?'
-    ).bind(clientIp).first<{ cnt: number }>()
-    if (count && count.cnt >= subLimit) {
-      return c.json({
-        code: 40303,
-        http_code: 403,
-        error: `Visitor subscription limit of ${subLimit} reached`,
-        link: 'https://ntfy.sh/docs',
-      }, 403)
-    }
+  const subResult = await checkSubscriptionLimit(DB, clientIp, VISITOR_SUBSCRIPTION_LIMIT || '30')
+  if (!subResult.allowed) {
+    return c.json({
+      code: 40303,
+      http_code: 403,
+      error: subResult.error!,
+      link: 'https://ntfy.sh/docs',
+    }, 403)
   }
 
   const existing = await DB.prepare(

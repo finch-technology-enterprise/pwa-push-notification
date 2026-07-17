@@ -12,6 +12,7 @@ export interface PublishMessage {
   time: number
   event: EventType
   expires?: number
+  scheduled_for?: number
   topic: string
   title?: string
   message?: string

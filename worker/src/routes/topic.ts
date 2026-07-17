@@ -5,11 +5,20 @@ import { authenticate, generateId, generateSequenceId, nowUnix, parseTags, parse
 import { initDatabase, incrementMessages } from '../db'
 import { TOPIC_REGEX, DISALLOWED_TOPICS_DEFAULT } from '../types'
 import type { PublishMessage } from '../types'
+import { checkMessageDailyLimit } from './rateLimit'
 
 const app = new Hono<Env>()
 
+// Support ntfy v2 unified API: PUT/POST / with topic in JSON body
+app.put('/', handleRootPublish)
+app.post('/', handleRootPublish)
+
 app.put('/:topic', handlePublish)
 app.post('/:topic', handlePublish)
+app.on('DELETE', '/:topic/:messageId', handleDelete)
+app.on('DELETE', '/:topic', handleTopicDelete)
+app.on('PUT', '/:topic/:messageId/clear', handleMessageClear)
+app.on('GET', '/:topic/:messageId/clear', handleMessageClear)
 
 app.get('/:topic/json', handleSubscribe)
 app.get('/:topic/sse', handleSubscribe)
@@ -17,6 +26,32 @@ app.get('/:topic/raw', handleSubscribe)
 app.get('/:topic/ws', handleSubscribe)
 app.get('/:topic/auth', handleAuth)
 app.get('/:topic', handlePublish)
+
+async function handleRootPublish(c: any): Promise<Response> {
+  const body = await c.req.json().catch(() => ({}))
+  const topic = body.topic
+  if (!topic || !TOPIC_REGEX.test(topic)) {
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400)
+  }
+  const headers = new Headers(c.req.raw.headers)
+  if (body.title) headers.set('X-Title', String(body.title))
+  if (body.priority) headers.set('X-Priority', String(body.priority))
+  if (body.tags) headers.set('X-Tags', Array.isArray(body.tags) ? body.tags.join(',') : String(body.tags))
+  if (body.click) headers.set('X-Click', String(body.click))
+  if (body.icon) headers.set('X-Icon', String(body.icon))
+  if (body.actions) headers.set('X-Actions', JSON.stringify(body.actions))
+  if (body.email) headers.set('X-Email', String(body.email))
+  if (body.delay !== undefined && body.delay !== null) headers.set('X-Delay', String(body.delay))
+  if (body.event) headers.set('X-Event', String(body.event))
+
+  const message = typeof body.message === 'string' ? body.message : ''
+  const newReq = new Request(`${new URL(c.req.url).origin}/${topic}`, {
+    method: c.req.method,
+    headers,
+    body: message || null,
+  })
+  return await app.fetch(newReq, c.env, c.executionCtx)
+}
 
 async function handlePublish(c: any): Promise<Response> {
   const topic = c.req.param('topic') as string
@@ -40,15 +75,9 @@ async function handlePublish(c: any): Promise<Response> {
     return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://ntfy.sh/docs' }, 403)
   }
 
-  const dailyLimit = parseInt(VISITOR_MESSAGE_DAILY_LIMIT || '0', 10)
-  if (dailyLimit > 0 && !auth.authenticated) {
-    const dayStart = Math.floor(Date.now() / 86400000) * 86400
-    const stmt = DB.prepare('SELECT COUNT(*) as cnt FROM messages WHERE user_id = ? AND time >= ?')
-      .bind(auth.userId, dayStart)
-    const msgCount = await stmt.first() as { cnt: number } | null
-    if (msgCount && msgCount.cnt >= dailyLimit) {
-      return c.json({ code: 40303, http_code: 403, error: `Message limit of ${dailyLimit} reached`, link: 'https://ntfy.sh/docs' }, 403)
-    }
+  const limitResult = await checkMessageDailyLimit(DB, auth.userId, VISITOR_MESSAGE_DAILY_LIMIT || '0')
+  if (!limitResult.allowed) {
+    return c.json({ code: 40303, http_code: 403, error: limitResult.error!, link: 'https://ntfy.sh/docs' }, 403)
   }
 
   const body = (await c.req.text().catch(() => '')) || c.req.query('message') || ''
@@ -102,12 +131,17 @@ async function handlePublish(c: any): Promise<Response> {
   const sendAs = readParam(c, 'X-Send-As', 'Send-As') || ''
   const encoding = readParam(c, 'X-Encoding', 'Encoding') || ''
   const contentType = c.req.header('Content-Type') || ''
+  const delay = readParam(c, 'X-Delay', 'Delay') || ''
+  const scheduledFor = delay ? parseDelay(delay) : 0
+  const eventType = readParam(c, 'X-Event', 'Event') || 'message'
+
+  const dbEvent = ['message_delete', 'message_clear'].includes(eventType) ? eventType : 'message'
 
   await DB.prepare(
-    `INSERT INTO messages (id, sequence_id, time, event, expires, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user_id, content_type, encoding, published)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO messages (id, sequence_id, time, event, expires, scheduled_for, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user_id, content_type, encoding, published)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
-    id, seqId, now, 'message', 0, topic, msgBody || '', title, priority, tags.join(','),
+    id, seqId, now, dbEvent, 0, scheduledFor, topic, msgBody || '', title, priority, tags.join(','),
     click, icon, actions, attachmentName, attachmentType, attachmentSize, attachmentExpires, attachmentUrl,
     auth.authenticated ? auth.username : '', auth.userId, contentType, encoding, 1
   ).run()
@@ -115,13 +149,14 @@ async function handlePublish(c: any): Promise<Response> {
   await incrementMessages(DB)
 
   const publishMsg: PublishMessage = {
-    id, sequence_id: seqId, time: now, event: 'message', topic,
+    id, sequence_id: seqId, time: now, event: (eventType as PublishMessage['event']), topic,
     title: title || undefined, message: msgBody || undefined,
     priority: priority as PublishMessage['priority'],
     tags: tags.length > 0 ? tags : undefined,
     click: click || undefined, icon: icon || undefined,
     actions: actions !== '[]' ? JSON.parse(actions) : undefined,
     content_type: contentType || undefined, encoding: encoding || undefined,
+    scheduled_for: scheduledFor > 0 ? scheduledFor : undefined,
   }
 
   if (attachmentUrl) {
@@ -143,10 +178,22 @@ async function handlePublish(c: any): Promise<Response> {
     })
   } catch {}
 
-  try {
-    const { WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY } = env(c)
-    await sendWebPushNotifications(DB, topic, publishMsg, WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY)
-  } catch {}
+  if (!scheduledFor) {
+    try {
+      const { WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY } = env(c)
+      await sendWebPushNotifications(DB, topic, publishMsg, WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY)
+    } catch {}
+    try {
+      const { FCM_SERVER_KEY } = env(c)
+      const { sendFcmNotifications } = await import('./fcm')
+      await sendFcmNotifications(DB, topic, publishMsg, FCM_SERVER_KEY)
+    } catch {}
+    try {
+      const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER } = env(c)
+      const { sendPhoneNotifications } = await import('./call')
+      await sendPhoneNotifications(DB, topic, publishMsg, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER)
+    } catch {}
+  }
 
   const resp = formatMessageResponse(publishMsg)
   return c.json(resp, 201)
@@ -198,7 +245,15 @@ async function handleSubscribe(c: any): Promise<Response> {
     const doUrl = `http://do/${suffix}?topic=${topic}&since=${since}&poll=${poll}`
 
     if (suffix === 'ws') {
-      return await stub.fetch(doUrl, c.req.raw)
+      try {
+        return await stub.fetch(new Request(doUrl, {
+          method: c.req.raw.method,
+          headers: c.req.raw.headers,
+        }))
+      } catch (e) {
+        console.error(`[TopicDO] WebSocket fetch failed`, e)
+        return new Response(`WebSocket error: ${e}`, { status: 500 })
+      }
     }
 
     return await stub.fetch(doUrl)
@@ -259,6 +314,9 @@ async function handleMultiTopicSubscribe(
       query += ' AND time <= ?'
       params.push(filterMinLte)
     }
+
+    query += ' AND (scheduled_for IS NULL OR scheduled_for = 0 OR scheduled_for <= ?)'
+    params.push(Math.floor(Date.now() / 1000))
 
     query += ' ORDER BY time ASC LIMIT 1000'
 
@@ -341,6 +399,136 @@ async function handleMultiTopicSubscribe(
       'X-Accel-Buffering': 'no',
     },
   })
+}
+
+async function handleDelete(c: any): Promise<Response> {
+  const topic = c.req.param('topic') as string
+  const messageId = c.req.param('messageId') || ''
+  const { DB, TOPIC_DO } = env(c)
+  await initDatabase(DB)
+
+  if (!topic || !TOPIC_REGEX.test(topic)) {
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400)
+  }
+
+  const existing = await DB.prepare('SELECT * FROM messages WHERE id = ? AND topic = ?')
+    .bind(messageId, topic).first() as any | null
+
+  if (!existing) {
+    return c.json({ code: 40401, http_code: 404, error: 'Message not found', link: 'https://ntfy.sh/docs' }, 404)
+  }
+
+  const id = generateId()
+  const now = nowUnix()
+  const seqId = generateSequenceId()
+
+  await DB.prepare(
+    `INSERT INTO messages (id, sequence_id, time, event, expires, scheduled_for, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user_id, content_type, encoding, published)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id, seqId, now, 'message_delete', 0, 0, topic, existing.message, '', 3, '',
+    '', '', '[]', '', '', 0, 0, '', '', '', '', '', 1
+  ).run()
+
+  const deleteMsg: PublishMessage = {
+    id, sequence_id: seqId, time: now, event: 'message_delete', topic,
+    message: existing.message || undefined,
+    poll_id: messageId,
+  }
+
+  try {
+    const doId = TOPIC_DO.idFromName(topic)
+    const stub = TOPIC_DO.get(doId)
+    await stub.fetch(`http://do/publish?topic=${topic}`, {
+      method: 'POST', body: JSON.stringify(deleteMsg),
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch {}
+
+  const resp = formatMessageResponse(deleteMsg)
+  return c.json(resp, 200)
+}
+
+async function handleTopicDelete(c: any): Promise<Response> {
+  const topic = c.req.param('topic') as string
+  const { DB, TOPIC_DO } = env(c)
+  await initDatabase(DB)
+
+  if (!topic || !TOPIC_REGEX.test(topic)) {
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400)
+  }
+
+  const auth = await authenticate(c)
+  const { write } = await checkTopicAccess(DB, auth.userId, topic)
+  if (!write) {
+    return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://ntfy.sh/docs' }, 403)
+  }
+
+  await DB.prepare('DELETE FROM messages WHERE topic = ?').bind(topic).run()
+
+  const id = generateId()
+  const now = nowUnix()
+  const seqId = generateSequenceId()
+  const clearMsg: PublishMessage = {
+    id, sequence_id: seqId, time: now, event: 'message_clear', topic,
+  }
+
+  try {
+    const doId = TOPIC_DO.idFromName(topic)
+    const stub = TOPIC_DO.get(doId)
+    await stub.fetch(`http://do/publish?topic=${topic}`, {
+      method: 'POST', body: JSON.stringify(clearMsg),
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch {}
+
+  return c.json({ success: true, topic }, 200)
+}
+
+async function handleMessageClear(c: any): Promise<Response> {
+  const topic = c.req.param('topic') as string
+  const messageId = c.req.param('messageId') || ''
+  const { DB, TOPIC_DO } = env(c)
+  await initDatabase(DB)
+
+  if (!topic || !TOPIC_REGEX.test(topic)) {
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400)
+  }
+
+  const auth = await authenticate(c)
+  const { write } = await checkTopicAccess(DB, auth.userId, topic)
+  if (!write) {
+    return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://ntfy.sh/docs' }, 403)
+  }
+
+  const id = generateId()
+  const now = nowUnix()
+  const seqId = generateSequenceId()
+
+  await DB.prepare(
+    `INSERT INTO messages (id, sequence_id, time, event, expires, scheduled_for, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user_id, content_type, encoding, published)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id, seqId, now, 'message_clear', 0, 0, topic, '', '', 3, '',
+    '', '', '[]', '', '', 0, 0, '', '', '', '', '', 1
+  ).run()
+
+  const clearMsg: PublishMessage = {
+    id, sequence_id: seqId, time: now, event: 'message_clear', topic,
+    poll_id: messageId,
+  }
+
+  try {
+    const doId = TOPIC_DO.idFromName(topic)
+    const stub = TOPIC_DO.get(doId)
+    await stub.fetch(`http://do/publish?topic=${topic}`, {
+      method: 'POST', body: JSON.stringify(clearMsg),
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch {}
+
+  const resp = formatMessageResponse(clearMsg)
+  return c.json(resp, 200)
 }
 
 async function handleAuth(c: any): Promise<Response> {
@@ -705,6 +893,9 @@ function formatMessageResponse(msg: PublishMessage): Record<string, unknown> {
     click: msg.click || null, icon: msg.icon || null,
     actions: msg.actions || [],
   }
+  if (msg.scheduled_for && msg.scheduled_for > Math.floor(Date.now() / 1000)) {
+    resp.scheduled_for = msg.scheduled_for
+  }
   if (msg.attachment) {
     resp.attachment = msg.attachment
   }
@@ -712,13 +903,14 @@ function formatMessageResponse(msg: PublishMessage): Record<string, unknown> {
 }
 
 function formatDbRow(row: any): PublishMessage {
+  const scheduledFor = row.scheduled_for ? parseInt(row.scheduled_for, 10) : 0
   const msg: PublishMessage = {
     id: row.id,
     sequence_id: row.sequence_id,
     time: row.time,
     event: row.event,
+    scheduled_for: scheduledFor > 0 ? scheduledFor : undefined,
     topic: row.topic,
-    message: row.message || undefined,
     title: row.title || undefined,
     priority: row.priority as PublishMessage['priority'],
     tags: row.tags ? row.tags.split(',').filter((t: string) => t) : undefined,
@@ -736,6 +928,37 @@ function formatDbRow(row: any): PublishMessage {
     }
   }
   return msg
+}
+
+function parseDelay(delay: string): number {
+  const now = Date.now()
+  const maxDelay = 3 * 86400_000 // 3 days in ms
+
+  const durationMatch = delay.match(/^(\d+)\s*([smhd])$/i)
+  if (durationMatch) {
+    const value = parseInt(durationMatch[1]!, 10)
+    const unit = durationMatch[2]!.toLowerCase()
+    const multipliers: Record<string, number> = {
+      s: 1000, m: 60000, h: 3600000, d: 86400000,
+    }
+    const ms = value * (multipliers[unit] || 0)
+    if (ms > maxDelay) return 0
+    return Math.floor((now + ms) / 1000)
+  }
+
+  const ts = parseInt(delay, 10)
+  if (/^\d{8,}$/.test(delay) && !isNaN(ts)) {
+    const ms = ts > 1e12 ? ts : ts * 1000
+    if (ms > now && ms - now <= maxDelay) return Math.floor(ms / 1000)
+    return 0
+  }
+
+  const parsed = Date.parse(delay)
+  if (!isNaN(parsed)) {
+    if (parsed > now && parsed - now <= maxDelay) return Math.floor(parsed / 1000)
+  }
+
+  return 0
 }
 
 function readParam(c: any, ...names: string[]): string | null {

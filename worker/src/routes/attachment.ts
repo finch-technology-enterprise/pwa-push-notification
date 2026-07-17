@@ -4,6 +4,7 @@ import type { Env } from '../index'
 import { generateId, nowUnix, parseTags, parseActions, authenticate } from '../middleware'
 import { initDatabase, incrementMessages } from '../db'
 import type { PublishMessage } from '../types'
+import { checkAttachmentTotalLimit } from './rateLimit'
 
 const app = new Hono<Env>()
 
@@ -32,14 +33,9 @@ async function handleFileUpload(c: any): Promise<Response> {
     return c.json({ code: 40001, http_code: 400, error: `File exceeds ${fileSizeLimit} bytes`, link: 'https://ntfy.sh/docs' }, 400)
   }
 
-  const totalSizeLimit = parseInt(ATTACHMENT_TOTAL_SIZE_LIMIT || '52428800', 10)
-  if (totalSizeLimit > 0) {
-    const totalRes = await DB.prepare(
-      'SELECT COALESCE(SUM(attachment_size), 0) as total FROM messages WHERE user_id = ?'
-    ).bind(auth.userId).first() as { total: number } | null
-    if (totalRes && (totalRes.total + bodyBytes.length) > totalSizeLimit) {
-      return c.json({ code: 40303, http_code: 403, error: `Total attachment size limit of ${totalSizeLimit} bytes exceeded`, link: 'https://ntfy.sh/docs' }, 403)
-    }
+  const totalResult = await checkAttachmentTotalLimit(DB, auth.userId, bodyBytes.length, ATTACHMENT_TOTAL_SIZE_LIMIT || '52428800')
+  if (!totalResult.allowed) {
+    return c.json({ code: 40303, http_code: 403, error: totalResult.error!, link: 'https://ntfy.sh/docs' }, 403)
   }
 
   const contentType = bodyBlob.type || c.req.header('Content-Type') || 'application/octet-stream'
@@ -104,11 +100,21 @@ async function handleFileUpload(c: any): Promise<Response> {
 async function handleFileDownload(c: any): Promise<Response> {
   const id = c.req.param('id')
   const filename = c.req.param('filename')
-  const { ATTACHMENTS } = env(c)
+  const { ATTACHMENTS, DB } = env(c)
 
   const obj = await ATTACHMENTS.get(`attachments/${id}/${filename}`)
   if (!obj) {
     return c.json({ code: 40401, http_code: 404, error: 'File not found', link: 'https://ntfy.sh/docs' }, 404)
+  }
+
+  const topic = obj.customMetadata?.topic as string | undefined
+  if (topic) {
+    await initDatabase(DB)
+    const auth = await authenticate(c)
+    const { read } = await checkTopicAccess(DB, auth.userId, topic)
+    if (!read) {
+      return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://ntfy.sh/docs' }, 403)
+    }
   }
 
   const contentType = obj.customMetadata?.contentType || 'application/octet-stream'
@@ -120,6 +126,43 @@ async function handleFileDownload(c: any): Promise<Response> {
       'Cache-Control': 'public, max-age=31536000',
     },
   })
+}
+
+async function checkTopicAccess(
+  db: D1Database,
+  userId: string,
+  topic: string,
+): Promise<{ read: boolean; write: boolean }> {
+  const exact = await db.prepare(
+    'SELECT read_access, write_access FROM user_access WHERE user_id = ? AND topic = ?'
+  ).bind(userId, topic).first() as { read_access: number; write_access: number } | null
+
+  if (exact) {
+    return { read: exact.read_access === 1, write: exact.write_access === 1 }
+  }
+
+  const patterns = await db.prepare(
+    'SELECT topic, read_access, write_access FROM user_access WHERE user_id = ? AND topic LIKE ?'
+  ).bind(userId, '%\*%').all()
+
+  let read = true
+  let write = true
+
+  for (const row of (patterns.results || []) as any[]) {
+    const pattern = row.topic as string
+    if (wildcardMatch(pattern, topic)) {
+      read = row.read_access === 1
+      write = row.write_access === 1
+      break
+    }
+  }
+
+  return { read, write }
+}
+
+function wildcardMatch(pattern: string, topic: string): boolean {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
+  return new RegExp(`^${escaped}$`, 'i').test(topic)
 }
 
 export { app as attachmentRoutes }

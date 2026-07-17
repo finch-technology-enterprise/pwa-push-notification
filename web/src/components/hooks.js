@@ -65,8 +65,12 @@ export const useConnectionListeners = (account, subscriptions, users, webPushTop
           await subscriptionManager.markNotificationReadBySequenceId(subscription.id, notification.sequence_id);
           await notifier.cancel(subscription, notification);
         } else {
-          // Regular message: delete existing and add new
+          // Regular message: skip if locally dismissed
           const sequenceId = notification.sequence_id || notification.id;
+          if (sequenceId && subscriptionManager.isDismissed(subscription.id, sequenceId)) {
+            return;
+          }
+          // Delete existing and add new
           if (sequenceId) {
             await subscriptionManager.deleteNotificationBySequenceId(subscription.id, sequenceId);
           }
