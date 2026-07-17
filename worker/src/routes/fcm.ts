@@ -14,7 +14,7 @@ export async function sendFcmNotifications(
 
   if (!subs.results || subs.results.length === 0) return
 
-  const title = msg.title || 'ntfy'
+  const title = msg.title || 'PWA Push Notification'
   const body = msg.message || ''
   const tag = msg.tags?.join(',') || ''
 

@@ -12,13 +12,13 @@ app.get('/metrics', async (c) => {
     const stats = await getStats(DB)
 
     const metrics = [
-      `# HELP ntfy_messages_total Total number of published messages`,
-      `# TYPE ntfy_messages_total counter`,
-      `ntfy_messages_total ${stats.messages}`,
-      ``,
-      `# HELP ntfy_build_info Build information`,
-      `# TYPE ntfy_build_info gauge`,
-      `ntfy_build_info{version="1.0.0",commit="",user="",date=""} 1`,
+      `# HELP pwa_push_messages_total Total number of published messages`,
+      `# TYPE pwa_push_messages_total counter`,
+      `pwa_push_messages_total ${stats.messages}`,
+
+      `# HELP pwa_push_build_info Build information`,
+      `# TYPE pwa_push_build_info gauge`,
+      `pwa_push_build_info{version="1.0.0",commit="",user="",date=""} 1`,
       ``,
     ].join('\n')
 

@@ -1,4 +1,4 @@
-# ntfy-cf
+# PWA Push Notification
 
 A [Cloudflare](https://cloudflare.com)-native reimplementation of [ntfy](https://ntfy.sh) — a simple HTTP-based pub-sub push notification service.
 

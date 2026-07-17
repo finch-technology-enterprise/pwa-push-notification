@@ -103,7 +103,7 @@ const App = () => {
 };
 
 const updateTitle = (newNotificationsCount) => {
-  document.title = newNotificationsCount > 0 ? `(${newNotificationsCount}) ntfy` : "ntfy";
+  document.title = newNotificationsCount > 0 ? `(${newNotificationsCount}) PWA Push` : "PWA Push Notification";
   window.navigator.setAppBadge?.(newNotificationsCount);
   updateFavicon(newNotificationsCount);
 };

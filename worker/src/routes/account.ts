@@ -518,9 +518,9 @@ app.post('/account/email/verify', async (c) => {
 
   await sendEmail(EMAIL, {
     to: emailAddresses[0],
-    from: { email: 'notify@finchtech.my', name: 'ntfy' },
+    from: { email: 'notify@finchtech.my', name: 'PWA Push Notification' },
     subject: 'Verify your email address',
-    text: `Hi ${userName},\n\nPlease verify your email address by clicking this link:\n${verifyUrl}\n\nThis link expires in 1 hour.\n\n- ntfy`,
+    text: `Hi ${userName},\n\nPlease verify your email address by clicking this link:\n${verifyUrl}\n\nThis link expires in 1 hour.\n\n- PWA Push`,
     html: `<h2>Verify your email</h2><p>Hi ${userName},</p><p>Please verify your email address by clicking the button below:</p><p><a href="${verifyUrl}" style="display:inline-block;padding:12px 24px;background:#088f8f;color:#fff;text-decoration:none;border-radius:4px">Verify Email</a></p><p>This link expires in 1 hour.</p>`,
   })
 
@@ -558,9 +558,9 @@ app.post('/account/password/reset/request', async (c) => {
 
     await sendEmail(EMAIL, {
       to: body.email,
-      from: { email: 'notify@finchtech.my', name: 'ntfy' },
+      from: { email: 'notify@finchtech.my', name: 'PWA Push Notification' },
       subject: 'Reset your password',
-      text: `Hi ${userEmail.user_name},\n\nYou requested a password reset. Click this link to reset your password:\n${resetUrl}\n\nThis link expires in 1 hour.\nIf you didn't request this, you can ignore this email.\n\n- ntfy`,
+      text: `Hi ${userEmail.user_name},\n\nYou requested a password reset. Click this link to reset your password:\n${resetUrl}\n\nThis link expires in 1 hour.\nIf you didn't request this, you can ignore this email.\n\n- PWA Push`,
       html: `<h2>Password Reset</h2><p>Hi ${userEmail.user_name},</p><p>You requested a password reset. Click the button below to reset your password:</p><p><a href="${resetUrl}" style="display:inline-block;padding:12px 24px;background:#088f8f;color:#fff;text-decoration:none;border-radius:4px">Reset Password</a></p><p>This link expires in 1 hour.</p><p>If you didn't request this, you can ignore this email.</p>`,
     })
   }

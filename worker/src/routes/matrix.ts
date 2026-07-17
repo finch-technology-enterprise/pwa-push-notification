@@ -13,7 +13,7 @@ app.get('/_matrix/push/v1/notify', (c) => {
     unifiedpush: { version: 1 },
     'org.matrix.msc4141': {},
     notification: {
-      url: `${BASE_URL || 'https://ntfy.sh'}/_matrix/push/v1/notify`,
+      url: `${BASE_URL || 'https://pwa-push-notification.finchtech-my.workers.dev'}/_matrix/push/v1/notify`,
     },
   })
 })

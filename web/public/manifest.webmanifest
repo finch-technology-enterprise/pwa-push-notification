@@ -1,6 +1,6 @@
 {
-  "name": "ntfy",
-  "short_name": "ntfy",
+  "name": "PWA Push Notification",
+  "short_name": "PWA Push",
   "description": "Send push notifications to your phone or desktop via HTTP PUT/POST",
   "start_url": "/",
   "display": "standalone",

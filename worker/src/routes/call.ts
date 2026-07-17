@@ -16,7 +16,7 @@ export async function sendPhoneNotifications(
 
   if (!phones.results || phones.results.length === 0) return
 
-  const message = msg.message || msg.title || 'Notification from ntfy'
+  const message = msg.message || msg.title || 'Notification from PWA Push'
   const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">${escapeXml(message)}</Say></Response>`
 
   const auth = btoa(`${twilioAccountSid}:${twilioAuthToken}`)
