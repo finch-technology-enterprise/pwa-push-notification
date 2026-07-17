@@ -7,7 +7,7 @@ import { dbAsync } from "../src/app/db";
 import session from "../src/app/Session";
 import { ACTION_HTTP, ACTION_VIEW } from "../src/app/actions";
 import { badge, icon, messageWithSequenceId, notificationTag, toNotificationParams } from "../src/app/notificationUtils";
-import initI18n from "../src/app/i18n";
+import initI18n from "../src/app/i18n-sw";
 import {
   EVENT_MESSAGE,
   EVENT_MESSAGE_CLEAR,
