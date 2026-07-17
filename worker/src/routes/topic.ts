@@ -16,10 +16,10 @@ app.post('/', handleRootPublish)
 app.put('/:topic', handlePublish)
 app.post('/:topic', handlePublish)
 app.put('/:topic/:sequenceId', handleUpdate)
-app.on('DELETE', '/:topic/:messageId', handleDelete)
-app.on('DELETE', '/:topic', handleTopicDelete)
-app.on('PUT', '/:topic/:messageId/clear', handleMessageClear)
-app.on('GET', '/:topic/:messageId/clear', handleMessageClear)
+app.delete('/:topic/:messageId', handleDelete)
+app.delete('/:topic', handleTopicDelete)
+app.put('/:topic/:messageId/clear', handleMessageClear)
+app.get('/:topic/:messageId/clear', handleMessageClear)
 
 app.get('/:topic/json', handleSubscribe)
 app.get('/:topic/sse', handleSubscribe)
@@ -121,8 +121,8 @@ async function handlePublish(c: any): Promise<Response> {
   }
 
   const body = (await c.req.text().catch(() => '')) || c.req.query('message') || ''
-  const cacheDisabled = readBool(c, 'X-Cache', 'Cache')
-  const firebaseDisabled = readBool(c, 'X-Firebase', 'Firebase')
+  const cacheEnabled = readBool(c, 'X-Cache', 'Cache')
+  const firebaseEnabled = readBool(c, 'X-Firebase', 'Firebase')
 
   const msgSizeLimit = parseInt(MESSAGE_SIZE_LIMIT || '4096', 10)
   const xFilename = c.req.header('X-Filename') || ''
@@ -190,7 +190,7 @@ async function handlePublish(c: any): Promise<Response> {
   const dbEvent = ['message_delete', 'message_clear'].includes(eventType) ? eventType : 'message'
 
   // Support X-Cache: no to skip DB storage
-  if (!cacheDisabled) {
+  if (cacheEnabled) {
     await DB.prepare(
       `INSERT INTO messages (id, sequence_id, time, event, expires, scheduled_for, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user_id, content_type, encoding, published)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -239,7 +239,7 @@ async function handlePublish(c: any): Promise<Response> {
       const { WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY } = env(c)
       await sendWebPushNotifications(DB, topic, publishMsg, WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY)
     } catch {}
-    if (!firebaseDisabled) {
+    if (firebaseEnabled) {
       try {
         const { FCM_SERVER_KEY } = env(c)
         const { sendFcmNotifications } = await import('./fcm')

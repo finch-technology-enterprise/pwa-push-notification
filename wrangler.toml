@@ -19,7 +19,7 @@ run_worker_first = true
 [[d1_databases]]
 binding = "DB"
 database_name = "pwa-push-notification-db"
-database_id = "32d34caf-a618-41d0-9ce0-213c9e8ef090"
+database_id = "4ced72f5-17bd-48c5-adff-d355ce1355f9"
 
 [[durable_objects.bindings]]
 name = "TOPIC_DO"
