@@ -1,4 +1,4 @@
-window.config = {
+self.config = {
   base_url: window.location.origin,
   app_root: "/",
   enable_login: true,

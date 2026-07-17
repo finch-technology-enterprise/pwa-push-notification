@@ -28,8 +28,16 @@ export default defineConfig(({ mode }) => ({
       },
       injectManifest: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,json}"],
-        globIgnores: ["config.js"],
-        // ponytail: no app.html mapping needed; we serve index.html directly
+        globIgnores: ["config.js", "app.html"],
+        manifestTransforms: [
+          (entries) => ({
+            manifest: entries.map((entry) =>
+              entry.url === "index.html"
+                ? { ...entry, url: "app.html" }
+                : entry,
+            ),
+          }),
+        ],
       },
       manifest:
         mode === "development"

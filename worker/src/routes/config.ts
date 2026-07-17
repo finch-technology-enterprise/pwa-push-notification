@@ -28,25 +28,25 @@ app.get('/config', async (c) => {
     : [...DISALLOWED_TOPICS_DEFAULT]
 
   const config = {
-    'base-url': BASE_URL || 'http://localhost',
-    'app-root': '/',
-    'enable-signup': ENABLE_SIGNUP !== 'false',
-    'enable-login': ENABLE_LOGIN !== 'false',
-    'enable-reservations': false,
-    'enable-payments': false,
-    'enable-emails': false,
-    'enable-calls': false,
-    'enable-web-push': false,
-    'enable-reset-password': false,
-    'require-login': false,
-    'billing-contact': 'billing@finchtech.my',
-    'web-push-public-key': WEB_PUSH_PUBLIC_KEY || undefined,
-    'disallowed-topics': disallowed,
-    'config-hash': 'v1',
-    'visitor-subscription-limit': parseInt(VISITOR_SUBSCRIPTION_LIMIT || '30', 10),
-    'visitor-message-daily-limit': parseInt(VISITOR_MESSAGE_DAILY_LIMIT || '0', 10),
-    'message-size-limit': parseInt(MESSAGE_SIZE_LIMIT || '4096', 10),
-    'keepalive-interval': parseInt(KEEPALIVE_INTERVAL || '45', 10),
+    'base_url': BASE_URL || '',
+    'app_root': '/',
+    'enable_signup': ENABLE_SIGNUP !== 'false',
+    'enable_login': ENABLE_LOGIN !== 'false',
+    'enable_reservations': false,
+    'enable_payments': false,
+    'enable_emails': false,
+    'enable_calls': false,
+    'enable_web_push': false,
+    'enable_reset_password': false,
+    'require_login': false,
+    'billing_contact': 'billing@finchtech.my',
+    'web_push_public_key': WEB_PUSH_PUBLIC_KEY || null,
+    'disallowed_topics': disallowed,
+    'config_hash': 'v1',
+    'visitor_subscription_limit': parseInt(VISITOR_SUBSCRIPTION_LIMIT || '30', 10),
+    'visitor_message_daily_limit': parseInt(VISITOR_MESSAGE_DAILY_LIMIT || '0', 10),
+    'message_size_limit': parseInt(MESSAGE_SIZE_LIMIT || '4096', 10),
+    'keepalive_interval': parseInt(KEEPALIVE_INTERVAL || '45', 10),
   }
 
   return c.json(config)
@@ -70,26 +70,26 @@ app.get('/config.js', async (c) => {
     : [...DISALLOWED_TOPICS_DEFAULT]
 
   const js = `
-window.ntfyConfig = {
-  "base-url": ${JSON.stringify(BASE_URL || 'http://localhost')},
-  "app-root": "/",
-  "enable-signup": ${ENABLE_SIGNUP !== 'false'},
-  "enable-login": ${ENABLE_LOGIN !== 'false'},
-  "enable-reservations": false,
-  "enable-payments": false,
-  "enable-emails": false,
-  "enable-calls": false,
-  "enable-web-push": false,
-  "enable-reset-password": false,
-  "require-login": false,
-  "billing-contact": ${JSON.stringify('billing@finchtech.my')},
-  "web-push-public-key": ${JSON.stringify(WEB_PUSH_PUBLIC_KEY || null)},
-  "disallowed-topics": ${JSON.stringify(disallowed)},
-  "config-hash": "v1",
-  "visitor-subscription-limit": ${parseInt(VISITOR_SUBSCRIPTION_LIMIT || '30', 10)},
-  "visitor-message-daily-limit": ${parseInt(VISITOR_MESSAGE_DAILY_LIMIT || '0', 10)},
-  "message-size-limit": ${parseInt(MESSAGE_SIZE_LIMIT || '4096', 10)},
-  "keepalive-interval": ${parseInt(KEEPALIVE_INTERVAL || '45', 10)}
+self.config = {
+  "base_url": ${JSON.stringify(BASE_URL || '')},
+  "app_root": "/",
+  "enable_signup": ${ENABLE_SIGNUP !== 'false'},
+  "enable_login": ${ENABLE_LOGIN !== 'false'},
+  "enable_reservations": false,
+  "enable_payments": false,
+  "enable_emails": false,
+  "enable_calls": false,
+  "enable_web_push": false,
+  "enable_reset_password": false,
+  "require_login": false,
+  "billing_contact": ${JSON.stringify('billing@finchtech.my')},
+  "web_push_public_key": ${JSON.stringify(WEB_PUSH_PUBLIC_KEY || null)},
+  "disallowed_topics": ${JSON.stringify(disallowed)},
+  "config_hash": "v1",
+  "visitor_subscription_limit": ${parseInt(VISITOR_SUBSCRIPTION_LIMIT || '30', 10)},
+  "visitor_message_daily_limit": ${parseInt(VISITOR_MESSAGE_DAILY_LIMIT || '0', 10)},
+  "message_size_limit": ${parseInt(MESSAGE_SIZE_LIMIT || '4096', 10)},
+  "keepalive_interval": ${parseInt(KEEPALIVE_INTERVAL || '45', 10)}
 };
 `
   return c.newResponse(js, 200, {

@@ -432,6 +432,12 @@ if (!import.meta.env.DEV) {
   // since we don't have access to `window` like in `src/app/config.js`
   self.importScripts("/config.js");
 
+  // The server returns an empty base_url when BASE_URL env var is not set;
+  // fill it in from the SW's own origin, matching the logic in src/app/config.js
+  if (!config.base_url) {
+    config.base_url = self.location.origin;
+  }
+
   // this is the fallback single-page-app route, matching vite.config.js PWA config,
   // and is served by the go web server. It is needed for the single-page-app to work.
   // https://developer.chrome.com/docs/workbox/modules/workbox-routing/#how-to-register-a-navigation-route
