@@ -21,9 +21,10 @@ message_stats  (standalone singleton)
 schema_version (standalone store)
 ```
 
-**Missing tables compared to original ntfy:**
-- `auth_failure` — rate limiting for failed authentication attempts
-- `fcm_subscription` / `fcm_subscription_topic` — FCM push subscription persistence
+**Tables added beyond original ntfy:**
+- `rate_limit` — token-bucket rate limiting (per-IP, per-tier)
+
+**All original ntfy tables are now present.**
 
 ---
 
@@ -68,6 +69,10 @@ Stores every published notification message.
 | `idx_messages_time` | `time` | Time-range queries |
 | `idx_messages_expires` | `expires` | Expired message cleanup |
 | `idx_messages_topic_time` | `topic, time DESC` | Topic-ordered message listing |
+| `idx_messages_sequence_id` | `sequence_id` | Sequence ID lookups |
+| `idx_messages_sender` | `sender` | Sender-based queries |
+| `idx_messages_user_id` | `user_id` | User-based queries |
+| `idx_messages_attachment_expires` | `attachment_expires` | Attachment cleanup |
 
 **Differences from original ntfy:**
 
@@ -75,13 +80,9 @@ Stores every published notification message.
 |--------|----------|---------|
 | Column `mid` (AUTOINCREMENT PK) | `mid INTEGER PRIMARY KEY AUTOINCREMENT` | `id TEXT PRIMARY KEY` |
 | Column `user` | `user TEXT` | `user_id TEXT` |
-| Column `attachment_deleted` | Included | **Missing** |
-| Column `scheduled_for` | Not present | **Added** |
-| Index `idx_mid` | ✅ | ❌ Missing |
-| Index `idx_sequence_id` | ✅ | ❌ Missing |
-| Index `idx_sender` | ✅ | ❌ Missing |
-| Index `idx_user` | ✅ | ❌ Missing |
-| Index `idx_attachment_expires` | ✅ | ❌ Missing |
+| Column `attachment_deleted` | Included | ✅ **Now present** |
+| Column `scheduled_for` | Not present | **Added** (workspace-only) |
+| All indexes | 8 indexes | ✅ **8 indexes — matching** |
 
 ### `message_stats`
 
@@ -222,6 +223,21 @@ Web Push subscription endpoint data, one per browser/device.
 | `updated_at` | INTEGER | | Last update timestamp |
 | `warned_at` | INTEGER | `0` | Last expiry warning timestamp |
 
+### `rate_limit`
+
+Token-bucket rate limiting state per IP address.
+
+| Column | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ip` | TEXT | | Client IP address |
+| `tier` | TEXT | `'default'` | Rate limit tier |
+| `tokens` | REAL | `60` | Current token count |
+| `last_refill` | INTEGER | `0` | Last refill timestamp (ms) |
+
+**PK**: `(ip, tier)`
+
+On each request, tokens are refilled based on elapsed time (`maxBurst * floor(elapsed / replenishMs)`). If tokens < 1, request is denied.
+
 ### `webpush_subscription_topic`
 
 Many-to-many mapping between subscriptions and topics.
@@ -244,13 +260,26 @@ Migration tracking table.
 
 ---
 
-## Missing Tables (vs original ntfy)
+## Tables (vs original ntfy)
 
-| Table | Original | ntfy-cf | Impact |
-|-------|----------|---------|--------|
-| `auth_failure` | ✅ | ❌ | No brute-force protection on login |
-| `fcm_subscription` | ✅ | ❌ | FCM subscriptions not persisted to DB |
-| `fcm_subscription_topic` | ✅ | ❌ | No topic-to-FCM mapping in DB |
+| Table | Original | ntfy-cf | Notes |
+|-------|----------|---------|-------|
+| `messages` | ✅ | ✅ | All columns matching (including `attachment_deleted`) |
+| `message_stats` | ✅ | ✅ | Singleton message counter |
+| `tier` | ✅ | ✅ | Pricing tiers |
+| `user` | ✅ | ✅ | All columns matching |
+| `user_access` | ✅ | ✅ | Per-topic permissions |
+| `user_token` | ✅ | ✅ | Auth tokens |
+| `user_phone` | ✅ | ✅ | Phone numbers |
+| `user_email` | ✅ | ✅ | Email addresses |
+| `user_magic_link` | ✅ | ✅ | Magic link tokens |
+| `auth_failure` | ✅ | ✅ | Auth rate limiting |
+| `fcm_subscription` | ✅ | ✅ | FCM push subs |
+| `fcm_subscription_topic` | ✅ | ✅ | FCM topic mapping |
+| `webpush_subscription` | ✅ | ✅ | Web Push subs |
+| `webpush_subscription_topic` | ✅ | ✅ | Web Push topic mapping |
+| `schema_version` | ✅ | ✅ | Migration tracking |
+| `rate_limit` | ❌ | ✅ **Added** | Token-bucket rate limiting |
 
 ---
 
@@ -264,7 +293,7 @@ ntfy-cf uses a simple inline migration approach rather than a formal migration f
 4. **Subsequent runs** — the version check passes immediately and no DDL is executed.
 5. **Future migrations** — a new version check is added: compare current version, apply incremental DDL, and bump the version.
 
-Current schema version: **4**
+Current schema version: **5**
 
 ---
 

@@ -11,35 +11,46 @@ Send push notifications to your phone or desktop via HTTP PUT/POST and subscribe
 | Feature | Status |
 |---------|--------|
 | HTTP publish (`PUT`/`POST /{topic}`) | ✅ |
+| Message update (`PUT /{topic}/{id}`) | ✅ |
 | Subscribe via WebSocket (`/ws`) | ✅ |
 | Subscribe via Server-Sent Events (`/sse`) | ✅ |
 | Subscribe via JSON stream (`/json`) | ✅ |
 | Subscribe via raw stream (`/raw`) | ✅ |
+| Multi-topic subscribe (`/topic1,topic2/...`) | ✅ |
+| Multi-topic WebSocket | ✅ |
 | Long-polling (`?poll=`) | ✅ |
 | Catch-up / history (`?since=`) | ✅ |
 | Priority, tags, title, click, icon, actions | ✅ |
 | Markdown content type | ✅ |
-| Authentication (Basic, Bearer, query param) | ✅ |
+| X-Cache / X-Firebase disable headers | ✅ |
+| X-At / X-In delay aliases | ✅ |
+| X-Sequence-ID / X-Poll-ID / X-Event | ✅ |
+| X-UnifiedPush support | ✅ |
+| UnifiedPush discovery (`?up=1`) | ✅ |
+| Authentication (Basic, Bearer, query param, WS) | ✅ |
+| WebSocket auth via `?auth=` parameter | ✅ |
+| Auth failure rate limiting (brute force protection) | ✅ |
+| Token-bucket rate limiting (burst/replenish) | ✅ |
 | Account sign-up, tokens, settings | ✅ |
+| FCM subscription registration | ✅ |
 | Admin API (user management, access control) | ✅ |
 | Web Push notifications (VAPID + RFC 8291) | ✅ |
 | File attachments (via R2) | ✅ |
-| Email publishing (via Cloudflare Email) | ✅ |
-| Phone call publishing (via Twilio) | ✅ |
+| Email publishing (via Cloudflare Email, boolean `X-Email: true`) | ✅ |
+| Phone call publishing (via Twilio, boolean `X-Call: true`) | ✅ |
 | Scheduled/delayed delivery | ✅ |
 | Firebase Cloud Messaging (FCM) | ✅ |
 | Prometheus metrics (`/v1/metrics`) | ✅ |
-| PWA web app (React + Material UI) | ✅ |
+| Matrix push gateway (`/_matrix/push/v1/notify`) | ✅ |
+| PWA web app (React + Material UI, 99% identical to ntfy) | ✅ |
 | Multi-language support (i18next, 44 languages) | ✅ |
 | Offline-capable frontend (IndexedDB + SW) | ✅ |
 | Light/dark/system theme | ✅ |
 | Message actions (view URL, HTTP request, copy) | ✅ |
 | Topic reservations & access control | ✅ |
 | Billing/tier system (Stripe stubs) | ⚠️ Partial |
-| UnifiedPush support | ❌ |
-| Matrix push gateway | ❌ |
-| SMTP email receiving | ❌ |
-| Message templates (Grafana, GitHub, etc.) | ❌ |
+| SMTP email receiving | ❌ (N/A for Workers) |
+| Message templates (Grafana, GitHub, etc.) | ❌ (niche, Go-specific) |
 
 ## Architecture
 

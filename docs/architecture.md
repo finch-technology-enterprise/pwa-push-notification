@@ -146,15 +146,8 @@ React SPA built with Vite, Material UI 9, and `vite-plugin-pwa`. Near-identical 
 
 | Feature | Status | Reason |
 |---------|--------|--------|
-| UnifiedPush | ❌ | Not implemented |
-| Matrix push gateway | ❌ | Not implemented |
-| SMTP email receiving | ❌ | Not implemented |
-| Message templates (Grafana, etc.) | ❌ | Not implemented |
-| Upstream forwarding | ❌ | Not implemented |
-| Per-second rate limiting (burst/replenish) | ❌ | Not implemented |
-| `X-Actions` publish header | ❌ | Not implemented |
-| WebSocket auth via `?auth=` param | ❌ | Not implemented |
-| FCM subscription persistence in DB | ❌ | Not implemented |
-| Auth failure rate limiting | ❌ | Not implemented |
-| Stripe billing webhook | ⚠️ Stubbed | Integration not complete |
-| Database indexes | ⚠️ Partial | Missing 4 indexes vs original |
+| SMTP email receiving | ❌ | Not applicable to Workers platform |
+| Message templates (Grafana, etc.) | ❌ | Go text/template feature, niche for Workers |
+| Stripe billing webhook/portal | ⚠️ Stubbed | Needs Stripe secret integration |
+| Upstream forwarding | ❌ | N/A (this IS the upstream) |
+| Attachment bandwidth tracking | ❌ | Not implemented |
