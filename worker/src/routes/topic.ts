@@ -15,6 +15,7 @@ app.post('/', handleRootPublish)
 
 app.put('/:topic', handlePublish)
 app.post('/:topic', handlePublish)
+app.put('/:topic/:sequenceId', handleUpdate)
 app.on('DELETE', '/:topic/:messageId', handleDelete)
 app.on('DELETE', '/:topic', handleTopicDelete)
 app.on('PUT', '/:topic/:messageId/clear', handleMessageClear)
@@ -53,6 +54,36 @@ async function handleRootPublish(c: any): Promise<Response> {
   return await app.fetch(newReq, c.env, c.executionCtx)
 }
 
+async function handleUpdate(c: any): Promise<Response> {
+  const topic = c.req.param('topic') as string
+  const sequenceId = c.req.param('sequenceId') as string
+  const { DB } = env(c)
+  await initDatabase(DB)
+
+  if (!topic || !TOPIC_REGEX.test(topic) || !sequenceId) {
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic or sequence ID', link: 'https://ntfy.sh/docs' }, 400)
+  }
+
+  const existing = await DB.prepare('SELECT id FROM messages WHERE sequence_id = ? AND topic = ?')
+    .bind(sequenceId, topic).first() as any | null
+
+  if (!existing) {
+    return c.json({ code: 40401, http_code: 404, error: 'Message not found', link: 'https://ntfy.sh/docs' }, 404)
+  }
+
+  // Forward to publish with X-Sequence-ID set so the existing message is updated
+  const forwardHeaders = new Headers(c.req.raw.headers)
+  forwardHeaders.set('X-Sequence-ID', sequenceId)
+  const forwardUrl = new URL(c.req.url)
+  forwardUrl.pathname = `/${topic}`
+  const forwardReq = new Request(forwardUrl.toString(), {
+    method: 'PUT',
+    headers: forwardHeaders,
+    body: c.req.raw.body,
+  })
+  return await app.fetch(forwardReq, c.env, c.executionCtx)
+}
+
 async function handlePublish(c: any): Promise<Response> {
   const topic = c.req.param('topic') as string
   const { DB, TOPIC_DO, DISALLOWED_TOPICS, MESSAGE_SIZE_LIMIT, VISITOR_MESSAGE_DAILY_LIMIT } = env(c)
@@ -81,6 +112,9 @@ async function handlePublish(c: any): Promise<Response> {
   }
 
   const body = (await c.req.text().catch(() => '')) || c.req.query('message') || ''
+  const cacheDisabled = readBool(c, 'X-Cache', 'Cache')
+  const firebaseDisabled = readBool(c, 'X-Firebase', 'Firebase')
+
   const msgSizeLimit = parseInt(MESSAGE_SIZE_LIMIT || '4096', 10)
   const xFilename = c.req.header('X-Filename') || ''
 
@@ -132,25 +166,34 @@ async function handlePublish(c: any): Promise<Response> {
   const sendAs = readParam(c, 'X-Send-As', 'Send-As') || ''
   const encoding = readParam(c, 'X-Encoding', 'Encoding') || ''
   const contentType = c.req.header('Content-Type') || ''
-  const delay = readParam(c, 'X-Delay', 'Delay') || ''
+  const delay = readParam(c, 'X-Delay', 'Delay', 'X-At', 'At', 'X-In', 'In') || ''
   const scheduledFor = delay ? parseDelay(delay) : 0
   const eventType = readParam(c, 'X-Event', 'Event') || 'message'
+  const sequenceIdX = readParam(c, 'X-Sequence-ID', 'Sequence-ID', 'sid')
+  const pollId = readParam(c, 'X-Poll-ID', 'Poll-ID') || ''
+  const unifiedPush = readBool(c, 'X-UnifiedPush', 'UnifiedPush', 'UP')
+
+  // Use custom sequence ID if provided, matching original header spec
+  const finalSeqId = sequenceIdX || seqId
 
   const dbEvent = ['message_delete', 'message_clear'].includes(eventType) ? eventType : 'message'
 
-  await DB.prepare(
-    `INSERT INTO messages (id, sequence_id, time, event, expires, scheduled_for, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user_id, content_type, encoding, published)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(
-    id, seqId, now, dbEvent, 0, scheduledFor, topic, msgBody || '', title, priority, tags.join(','),
-    click, icon, actions, attachmentName, attachmentType, attachmentSize, attachmentExpires, attachmentUrl,
-    auth.authenticated ? auth.username : '', auth.userId, contentType, encoding, 1
-  ).run()
+  // Support X-Cache: no to skip DB storage
+  if (!cacheDisabled) {
+    await DB.prepare(
+      `INSERT INTO messages (id, sequence_id, time, event, expires, scheduled_for, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user_id, content_type, encoding, published)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      id, finalSeqId, now, dbEvent, 0, scheduledFor, topic, msgBody || '', title, priority, tags.join(','),
+      click, icon, actions, attachmentName, attachmentType, attachmentSize, attachmentExpires, attachmentUrl,
+      auth.authenticated ? auth.username : '', auth.userId, contentType, encoding, 1
+    ).run()
 
-  await incrementMessages(DB)
+    await incrementMessages(DB)
+  }
 
   const publishMsg: PublishMessage = {
-    id, sequence_id: seqId, time: now, event: (eventType as PublishMessage['event']), topic,
+    id, sequence_id: finalSeqId, time: now, event: (eventType as PublishMessage['event']), topic,
     title: title || undefined, message: msgBody || undefined,
     priority: priority as PublishMessage['priority'],
     tags: tags.length > 0 ? tags : undefined,
@@ -158,6 +201,7 @@ async function handlePublish(c: any): Promise<Response> {
     actions: actions !== '[]' ? JSON.parse(actions) : undefined,
     content_type: contentType || undefined, encoding: encoding || undefined,
     scheduled_for: scheduledFor > 0 ? scheduledFor : undefined,
+    poll_id: pollId || undefined,
   }
 
   if (attachmentUrl) {
@@ -184,11 +228,13 @@ async function handlePublish(c: any): Promise<Response> {
       const { WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY } = env(c)
       await sendWebPushNotifications(DB, topic, publishMsg, WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY)
     } catch {}
-    try {
-      const { FCM_SERVER_KEY } = env(c)
-      const { sendFcmNotifications } = await import('./fcm')
-      await sendFcmNotifications(DB, topic, publishMsg, FCM_SERVER_KEY)
-    } catch {}
+    if (!firebaseDisabled) {
+      try {
+        const { FCM_SERVER_KEY } = env(c)
+        const { sendFcmNotifications } = await import('./fcm')
+        await sendFcmNotifications(DB, topic, publishMsg, FCM_SERVER_KEY)
+      } catch {}
+    }
     try {
       const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER } = env(c)
       const { sendPhoneNotifications } = await import('./call')
@@ -276,7 +322,7 @@ async function handleMultiTopicSubscribe(
   keepaliveMs: number,
 ): Promise<Response> {
   if (suffix === 'ws') {
-    return c.json({ code: 40001, http_code: 400, error: 'WebSocket multi-topic not supported', link: 'https://ntfy.sh/docs' }, 400) as Response
+    return await handleMultiTopicWebSocket(c, db, topicDo, topics, since)
   }
 
   const filterPriority = c.req.query('priority') || ''
@@ -403,6 +449,62 @@ async function handleMultiTopicSubscribe(
       'X-Accel-Buffering': 'no',
     },
   })
+}
+
+async function handleMultiTopicWebSocket(
+  c: any,
+  db: D1Database,
+  topicDo: DurableObjectNamespace,
+  topics: string[],
+  since: string,
+): Promise<Response> {
+  const { 0: client, 1: server } = new WebSocketPair()
+  server.accept()
+
+  const sinceTime = since && since !== 'all' ? parseInt(since, 10) : 0
+
+  // Send past messages from D1 for all topics
+  if (sinceTime > 0) {
+    const placeholders = topics.map(() => '?').join(',')
+    const rows = await db.prepare(
+      `SELECT * FROM messages WHERE topic IN (${placeholders}) AND time > ? AND (scheduled_for IS NULL OR scheduled_for = 0 OR scheduled_for <= ?) ORDER BY time ASC LIMIT 500`
+    ).bind(...topics, sinceTime, Math.floor(Date.now() / 1000)).all()
+
+    for (const row of (rows.results || []) as any[]) {
+      try { server.send(JSON.stringify(formatDbRow(row))) } catch {}
+    }
+  }
+
+  // Subscribe to each topic's DO via JSON stream, forward to client WS
+  const abortController = new AbortController()
+  server.addEventListener('close', () => abortController.abort())
+  server.addEventListener('error', () => abortController.abort())
+
+  for (const topic of topics) {
+    const doId = topicDo.idFromName(topic)
+    const stub = topicDo.get(doId)
+    const doUrl = `http://do/json?topic=${topic}&since=all`
+
+    ;(async () => {
+      try {
+        const resp = await stub.fetch(doUrl, { signal: abortController.signal, headers: c.req.raw.headers })
+        const reader = resp.body?.getReader()
+        if (!reader) return
+        const decoder = new TextDecoder()
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const text = decoder.decode(value, { stream: true })
+          const lines = text.split('\n').filter(Boolean)
+          for (const line of lines) {
+            try { server.send(line) } catch { return }
+          }
+        }
+      } catch {}
+    })()
+  }
+
+  return new Response(null, { status: 101, webSocket: client })
 }
 
 async function handleDelete(c: any): Promise<Response> {
@@ -973,6 +1075,13 @@ function readParam(c: any, ...names: string[]): string | null {
     if (q) return q
   }
   return null
+}
+
+function readBool(c: any, ...names: string[]): boolean {
+  const val = readParam(c, ...names)
+  if (!val) return true
+  const lower = val.toLowerCase()
+  return lower !== 'no' && lower !== 'false' && lower !== '0'
 }
 
 export { app as topicRoutes }

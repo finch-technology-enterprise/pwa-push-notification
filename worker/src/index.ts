@@ -14,6 +14,7 @@ import { attachmentRoutes } from './routes/attachment'
 import { billingRoutes } from './routes/billing'
 import { TOPIC_REGEX } from './types'
 import { buildConfigJs } from './routes/config'
+import { initDatabase } from './db'
 
 export type Env = {
   Bindings: {
@@ -114,8 +115,28 @@ export default {
           const bindings = env as unknown as Env['Bindings']
           const doId = bindings.TOPIC_DO.idFromName(topic)
           const stub = bindings.TOPIC_DO.get(doId)
+
           const since = url.searchParams.get('since') || ''
-          return await stub.fetch(new Request(`http://do/ws?topic=${topic}&since=${since}`, {
+
+          // Resolve auth from header or ?auth= query param
+          let authUser = ''
+          let authToken = ''
+          const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
+          const authQuery = url.searchParams.get('auth')
+          if (authHeader) {
+            if (authHeader.startsWith('Bearer ')) {
+              authToken = authHeader.slice(7)
+            } else if (authHeader.startsWith('nk')) {
+              authToken = authHeader
+            } else if (authHeader.startsWith('Basic ')) {
+              authUser = authHeader
+            }
+          } else if (authQuery) {
+            authToken = authQuery
+          }
+
+          const doUrl = `http://do/ws?topic=${topic}&since=${since}&authUser=${encodeURIComponent(authUser)}&authToken=${encodeURIComponent(authToken)}`
+          return await stub.fetch(new Request(doUrl, {
             method: 'GET',
             headers: request.headers,
           }))

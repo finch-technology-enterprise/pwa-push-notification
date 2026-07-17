@@ -1,33 +1,38 @@
 -- Messages table
 CREATE TABLE IF NOT EXISTS messages (
-    id              TEXT PRIMARY KEY,
-    sequence_id     TEXT NOT NULL,
-    time            INTEGER NOT NULL,
-    event           TEXT NOT NULL,
-    expires         INTEGER NOT NULL DEFAULT 0,
-    topic           TEXT NOT NULL,
-    message         TEXT NOT NULL DEFAULT '',
-    title           TEXT NOT NULL DEFAULT '',
-    priority        INTEGER NOT NULL DEFAULT 3,
-    tags            TEXT NOT NULL DEFAULT '',
-    click           TEXT NOT NULL DEFAULT '',
-    icon            TEXT NOT NULL DEFAULT '',
-    actions         TEXT NOT NULL DEFAULT '[]',
-    attachment_name TEXT NOT NULL DEFAULT '',
-    attachment_type TEXT NOT NULL DEFAULT '',
-    attachment_size INTEGER NOT NULL DEFAULT 0,
-    attachment_expires INTEGER NOT NULL DEFAULT 0,
-    attachment_url  TEXT NOT NULL DEFAULT '',
-    sender          TEXT NOT NULL DEFAULT '',
-    user_id         TEXT NOT NULL DEFAULT '',
-    content_type    TEXT NOT NULL DEFAULT '',
-    encoding        TEXT NOT NULL DEFAULT '',
-    published       INTEGER NOT NULL DEFAULT 1
+    id                  TEXT PRIMARY KEY,
+    sequence_id         TEXT NOT NULL,
+    time                INTEGER NOT NULL,
+    event               TEXT NOT NULL,
+    expires             INTEGER NOT NULL DEFAULT 0,
+    topic               TEXT NOT NULL,
+    message             TEXT NOT NULL DEFAULT '',
+    title               TEXT NOT NULL DEFAULT '',
+    priority            INTEGER NOT NULL DEFAULT 3,
+    tags                TEXT NOT NULL DEFAULT '',
+    click               TEXT NOT NULL DEFAULT '',
+    icon                TEXT NOT NULL DEFAULT '',
+    actions             TEXT NOT NULL DEFAULT '[]',
+    attachment_name     TEXT NOT NULL DEFAULT '',
+    attachment_type     TEXT NOT NULL DEFAULT '',
+    attachment_size     INTEGER NOT NULL DEFAULT 0,
+    attachment_expires  INTEGER NOT NULL DEFAULT 0,
+    attachment_url      TEXT NOT NULL DEFAULT '',
+    attachment_deleted  INTEGER NOT NULL DEFAULT 0,
+    sender              TEXT NOT NULL DEFAULT '',
+    user_id             TEXT NOT NULL DEFAULT '',
+    content_type        TEXT NOT NULL DEFAULT '',
+    encoding            TEXT NOT NULL DEFAULT '',
+    published           INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_messages_topic ON messages(topic);
 CREATE INDEX IF NOT EXISTS idx_messages_time ON messages(time);
 CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages(expires);
 CREATE INDEX IF NOT EXISTS idx_messages_topic_time ON messages(topic, time DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_sequence_id ON messages(sequence_id);
+CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender);
+CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_messages_attachment_expires ON messages(attachment_expires);
 
 -- Message stats
 CREATE TABLE IF NOT EXISTS message_stats (
@@ -153,3 +158,44 @@ CREATE TABLE IF NOT EXISTS webpush_subscription_topic (
     FOREIGN KEY (subscription_id) REFERENCES webpush_subscription(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_wp_topic ON webpush_subscription_topic(topic);
+
+-- FCM subscriptions (Android push via Firebase)
+CREATE TABLE IF NOT EXISTS fcm_subscription (
+    id             TEXT PRIMARY KEY,
+    token          TEXT NOT NULL UNIQUE,
+    user_id        TEXT NOT NULL,
+    subscriber_ip  TEXT NOT NULL,
+    created_at     INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS fcm_subscription_topic (
+    subscription_id TEXT NOT NULL,
+    topic           TEXT NOT NULL,
+    PRIMARY KEY (subscription_id, topic),
+    FOREIGN KEY (subscription_id) REFERENCES fcm_subscription(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_fcm_topic ON fcm_subscription_topic(topic);
+
+-- Auth failure tracking (brute force protection)
+CREATE TABLE IF NOT EXISTS auth_failure (
+    ip        TEXT NOT NULL,
+    failed_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_failure_ip ON auth_failure(ip);
+CREATE INDEX IF NOT EXISTS idx_auth_failure_failed_at ON auth_failure(failed_at);
+
+-- Rate limiting (token-bucket)
+CREATE TABLE IF NOT EXISTS rate_limit (
+    ip          TEXT NOT NULL,
+    tier        TEXT NOT NULL DEFAULT 'default',
+    tokens      REAL NOT NULL DEFAULT 60,
+    last_refill INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (ip, tier)
+);
+
+-- Schema version tracking
+CREATE TABLE IF NOT EXISTS schema_version (
+    store   TEXT PRIMARY KEY,
+    version INTEGER NOT NULL
+);

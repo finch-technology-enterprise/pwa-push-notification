@@ -83,6 +83,45 @@ export async function recordAuthFailure(db: D1Database, ip: string): Promise<voi
   await db.prepare("INSERT INTO auth_failure (ip, failed_at) VALUES (?, ?)").bind(ip, now).run()
 }
 
+export async function checkRequestRateLimit(
+  db: D1Database, ip: string, burst?: number, replenishMs?: number,
+): Promise<{ allowed: boolean }> {
+  const maxBurst = burst ?? 60
+  const refillInterval = replenishMs ?? 5000
+  const tier = 'default'
+
+  if (maxBurst <= 0) return { allowed: true }
+
+  const row = await db.prepare(
+    'SELECT tokens, last_refill FROM rate_limit WHERE ip = ? AND tier = ?'
+  ).bind(ip, tier).first<{ tokens: number; last_refill: number }>()
+
+  const now = Date.now()
+  let tokens = maxBurst
+  let lastRefill = now
+
+  if (row) {
+    const elapsed = now - row.last_refill
+    const refilled = Math.floor(elapsed / refillInterval)
+    const added = refilled * maxBurst
+    tokens = Math.min(maxBurst, row.tokens + added)
+    lastRefill = row.last_refill + refilled * refillInterval
+  }
+
+  if (tokens < 1) {
+    await db.prepare(
+      'INSERT OR REPLACE INTO rate_limit (ip, tier, tokens, last_refill) VALUES (?, ?, ?, ?)'
+    ).bind(ip, tier, tokens, lastRefill).run()
+    return { allowed: false }
+  }
+
+  tokens -= 1
+  await db.prepare(
+    'INSERT OR REPLACE INTO rate_limit (ip, tier, tokens, last_refill) VALUES (?, ?, ?, ?)'
+  ).bind(ip, tier, tokens, lastRefill).run()
+  return { allowed: true }
+}
+
 const TIER_FIELDS = new Set([
   'messages_limit', 'emails_limit', 'calls_limit', 'reservations_limit',
   'attachment_file_size_limit', 'attachment_total_size_limit',

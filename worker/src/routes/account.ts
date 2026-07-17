@@ -605,4 +605,51 @@ app.post('/account/password/reset', async (c) => {
   return c.json({ success: true })
 })
 
+// FCM subscription registration (for Android push notifications)
+app.post('/account/fcm', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+  const body = await c.req.json<{ token: string; topics: string[] }>().catch(() => ({ token: '', topics: [] }))
+
+  if (!body.token) {
+    return c.json({ code: 40001, http_code: 400, error: 'Missing FCM token', link: 'https://ntfy.sh/docs' }, 400)
+  }
+
+  const ip = c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for') || 'unknown'
+  const subId = generateId()
+  const now = nowUnix()
+
+  await DB.prepare(
+    'INSERT OR REPLACE INTO fcm_subscription (id, token, user_id, subscriber_ip, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(subId, body.token, auth.userId, ip, now).run()
+
+  if (body.topics?.length) {
+    for (const topic of body.topics) {
+      await DB.prepare(
+        'INSERT OR IGNORE INTO fcm_subscription_topic (subscription_id, topic) VALUES (?, ?)'
+      ).bind(subId, topic).run()
+    }
+  }
+
+  return c.json({ success: true, id: subId }, 201)
+})
+
+app.delete('/account/fcm', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+  const body = await c.req.json<{ token?: string }>().catch(() => ({ token: '' }))
+
+  if (body.token && body.token.length > 0) {
+    const sub = await DB.prepare('SELECT id FROM fcm_subscription WHERE token = ? AND user_id = ?')
+      .bind(body.token, auth.userId).first<{ id: string }>()
+    if (sub) {
+      await DB.prepare('DELETE FROM fcm_subscription_topic WHERE subscription_id = ?').bind(sub.id).run()
+      await DB.prepare('DELETE FROM fcm_subscription WHERE id = ?').bind(sub.id).run()
+    }
+  }
+  return c.json({ success: true })
+})
+
 export { app as accountRoutes }

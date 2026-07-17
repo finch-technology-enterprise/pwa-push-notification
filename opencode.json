@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "atlassian": {
+      "enabled": false
+    },
+    "github-john-lee-zus": {
+      "enabled": false
+    },
+    "lark-mcp": {
+      "enabled": false
+    }
+  }
+}

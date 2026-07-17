@@ -1,33 +1,38 @@
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS messages (
-    id              TEXT PRIMARY KEY,
-    sequence_id     TEXT NOT NULL,
-    time            INTEGER NOT NULL,
-    event           TEXT NOT NULL,
-    expires         INTEGER NOT NULL DEFAULT 0,
-    topic           TEXT NOT NULL,
-    message         TEXT NOT NULL DEFAULT '',
-    title           TEXT NOT NULL DEFAULT '',
-    priority        INTEGER NOT NULL DEFAULT 3,
-    tags            TEXT NOT NULL DEFAULT '',
-    click           TEXT NOT NULL DEFAULT '',
-    icon            TEXT NOT NULL DEFAULT '',
-    actions         TEXT NOT NULL DEFAULT '[]',
-    attachment_name TEXT NOT NULL DEFAULT '',
-    attachment_type TEXT NOT NULL DEFAULT '',
-    attachment_size INTEGER NOT NULL DEFAULT 0,
-    attachment_expires INTEGER NOT NULL DEFAULT 0,
-    attachment_url  TEXT NOT NULL DEFAULT '',
-    sender          TEXT NOT NULL DEFAULT '',
-    user_id         TEXT NOT NULL DEFAULT '',
-    content_type    TEXT NOT NULL DEFAULT '',
-    encoding        TEXT NOT NULL DEFAULT '',
-    published       INTEGER NOT NULL DEFAULT 1
+    id                  TEXT PRIMARY KEY,
+    sequence_id         TEXT NOT NULL,
+    time                INTEGER NOT NULL,
+    event               TEXT NOT NULL,
+    expires             INTEGER NOT NULL DEFAULT 0,
+    topic               TEXT NOT NULL,
+    message             TEXT NOT NULL DEFAULT '',
+    title               TEXT NOT NULL DEFAULT '',
+    priority            INTEGER NOT NULL DEFAULT 3,
+    tags                TEXT NOT NULL DEFAULT '',
+    click               TEXT NOT NULL DEFAULT '',
+    icon                TEXT NOT NULL DEFAULT '',
+    actions             TEXT NOT NULL DEFAULT '[]',
+    attachment_name     TEXT NOT NULL DEFAULT '',
+    attachment_type     TEXT NOT NULL DEFAULT '',
+    attachment_size     INTEGER NOT NULL DEFAULT 0,
+    attachment_expires  INTEGER NOT NULL DEFAULT 0,
+    attachment_url      TEXT NOT NULL DEFAULT '',
+    attachment_deleted  INTEGER NOT NULL DEFAULT 0,
+    sender              TEXT NOT NULL DEFAULT '',
+    user_id             TEXT NOT NULL DEFAULT '',
+    content_type        TEXT NOT NULL DEFAULT '',
+    encoding            TEXT NOT NULL DEFAULT '',
+    published           INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_messages_topic ON messages(topic);
 CREATE INDEX IF NOT EXISTS idx_messages_time ON messages(time);
 CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages(expires);
 CREATE INDEX IF NOT EXISTS idx_messages_topic_time ON messages(topic, time DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_sequence_id ON messages(sequence_id);
+CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender);
+CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_messages_attachment_expires ON messages(attachment_expires);
 
 CREATE TABLE IF NOT EXISTS message_stats (
     key   TEXT PRIMARY KEY,
@@ -167,6 +172,14 @@ CREATE TABLE IF NOT EXISTS auth_failure (
 CREATE INDEX IF NOT EXISTS idx_auth_failure_ip ON auth_failure(ip);
 CREATE INDEX IF NOT EXISTS idx_auth_failure_failed_at ON auth_failure(failed_at);
 
+CREATE TABLE IF NOT EXISTS rate_limit (
+    ip        TEXT NOT NULL,
+    tier      TEXT NOT NULL DEFAULT 'default',
+    tokens    REAL NOT NULL DEFAULT 60,
+    last_refill INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (ip, tier)
+);
+
 CREATE TABLE IF NOT EXISTS schema_version (
     store   TEXT PRIMARY KEY,
     version INTEGER NOT NULL
@@ -290,6 +303,36 @@ export async function initDatabase(db: D1Database): Promise<void> {
       await db.prepare("CREATE INDEX IF NOT EXISTS idx_auth_failure_failed_at ON auth_failure(failed_at)").run()
     } catch {}
     await db.prepare("UPDATE schema_version SET version = 4 WHERE store = 'main'").run()
+  }
+
+  if (existing.version === 4) {
+    try {
+      await db.prepare("ALTER TABLE messages ADD COLUMN attachment_deleted INTEGER NOT NULL DEFAULT 0").run()
+    } catch {}
+    try {
+      await db.prepare("CREATE INDEX IF NOT EXISTS idx_messages_sequence_id ON messages(sequence_id)").run()
+    } catch {}
+    try {
+      await db.prepare("CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender)").run()
+    } catch {}
+    try {
+      await db.prepare("CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id)").run()
+    } catch {}
+    try {
+      await db.prepare("CREATE INDEX IF NOT EXISTS idx_messages_attachment_expires ON messages(attachment_expires)").run()
+    } catch {}
+    try {
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS rate_limit (
+          ip        TEXT NOT NULL,
+          tier      TEXT NOT NULL DEFAULT 'default',
+          tokens    REAL NOT NULL DEFAULT 60,
+          last_refill INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (ip, tier)
+        )
+      `).run()
+    } catch {}
+    await db.prepare("UPDATE schema_version SET version = 5 WHERE store = 'main'").run()
   }
 }
 

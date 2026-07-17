@@ -7,11 +7,11 @@ describe('hashPassword & verifyPassword', () => {
     const password = 'test-password-123!'
     const hash = await hashPassword(password)
     expect(hash).toBeTruthy()
-    expect(hash.startsWith('scrypt$')).toBe(true)
+    expect(hash.startsWith('pbkdf2$')).toBe(true)
 
     const parts = hash.split('$')
     expect(parts.length).toBe(4)
-    expect(parts[0]!).toBe('scrypt')
+    expect(parts[0]!).toBe('pbkdf2')
     expect(() => atob(parts[1]!)).not.toThrow()
     expect(() => atob(parts[2]!)).not.toThrow()
     expect(() => atob(parts[3]!)).not.toThrow()
