@@ -131,9 +131,33 @@ app.post('/account/token', async (c) => {
     }, 429)
   }
 
-  const body = await c.req.json<{ user: string; password: string; label?: string }>()
+  // Accept credentials from JSON body OR Basic auth header
+  let loginUser: string | undefined
+  let loginPass: string | undefined
+  let label: string | undefined
 
-  if (!body.user || !body.password) {
+  try {
+    const body = await c.req.json<{ user: string; password: string; label?: string }>()
+    loginUser = body.user
+    loginPass = body.password
+    label = body.label
+  } catch {
+    // Body is not JSON — try Basic auth header
+  }
+
+  if (!loginUser || !loginPass) {
+    const authHeader = c.req.header('authorization') || c.req.header('Authorization')
+    if (authHeader && authHeader.startsWith('Basic ')) {
+      const decoded = atob(authHeader.slice(6))
+      const colonIdx = decoded.indexOf(':')
+      if (colonIdx !== -1) {
+        loginUser = decoded.substring(0, colonIdx)
+        loginPass = decoded.substring(colonIdx + 1)
+      }
+    }
+  }
+
+  if (!loginUser || !loginPass) {
     return c.json({
       code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://ntfy.sh/docs',
     }, 400)
@@ -141,7 +165,7 @@ app.post('/account/token', async (c) => {
 
   const user = await DB.prepare(
     'SELECT id, user_name, pass, role FROM user WHERE user_name = ? AND deleted IS NULL'
-  ).bind(body.user).first<{ id: string; user_name: string; pass: string; role: string }>()
+  ).bind(loginUser).first<{ id: string; user_name: string; pass: string; role: string }>()
 
   if (!user) {
     await recordAuthFailure(DB, ip)
@@ -150,7 +174,7 @@ app.post('/account/token', async (c) => {
     }, 401)
   }
 
-  const valid = await verifyPassword(body.password, user.pass)
+  const valid = await verifyPassword(loginPass!, user.pass)
   if (!valid) {
     await recordAuthFailure(DB, ip)
     return c.json({
@@ -161,11 +185,11 @@ app.post('/account/token', async (c) => {
   const token = await generateToken()
   const now = nowUnix()
   const tokenExpires = now + 86400 * 365
-  const label = body.label || 'web'
+  const finalLabel = label || 'web'
 
   await DB.prepare(
     'INSERT INTO user_token (user_id, token, label, last_access, last_origin, expires, provisioned) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).bind(user.id, token, label, now, '', tokenExpires, 0).run()
+  ).bind(user.id, token, finalLabel, now, '', tokenExpires, 0).run()
 
   return c.json({
     token,

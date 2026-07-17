@@ -28,6 +28,7 @@ import { ACTION_BROADCAST, ACTION_COPY, ACTION_HTTP, ACTION_VIEW } from "../app/
 import { formatMessage, formatTitle, isImage } from "../app/notificationUtils";
 import { LightboxBackdrop, Paragraph, VerticallyCenteredContainer } from "./styles";
 import subscriptionManager from "../app/SubscriptionManager";
+import api from "../app/Api";
 import notifier from "../app/Notifier";
 import priority1 from "../img/priority-1.svg";
 import priority2 from "../img/priority-2.svg";
@@ -188,6 +189,13 @@ const NotificationItem = (props) => {
   const handleDelete = async () => {
     console.log(`[Notifications] Deleting notification ${notification.id}`);
     await subscriptionManager.deleteNotification(notification.id);
+    // Also delete on server so it doesn't come back on refresh
+    const sub = await subscriptionManager.get(notification.subscriptionId);
+    if (sub) {
+      api.deleteMessage(sub.baseUrl, sub.topic, notification.id).catch((e) =>
+        console.warn(`[Notifications] Server delete failed (non-fatal):`, e),
+      );
+    }
   };
   const handleMarkRead = async () => {
     console.log(`[Notifications] Marking notification ${notification.id} as read`);

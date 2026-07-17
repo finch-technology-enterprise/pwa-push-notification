@@ -99,6 +99,26 @@ class Api {
     return send;
   }
 
+  async deleteMessage(baseUrl, topic, messageId) {
+    const user = await userManager.get(baseUrl);
+    const url = `${topicUrl(baseUrl, topic)}/${messageId}`;
+    console.log(`[Api] Deleting message ${messageId} from ${topic}`);
+    await fetchOrThrow(url, {
+      method: "DELETE",
+      headers: maybeWithAuth({}, user),
+    });
+  }
+
+  async clearTopic(baseUrl, topic) {
+    const user = await userManager.get(baseUrl);
+    const url = topicUrl(baseUrl, topic);
+    console.log(`[Api] Clearing all messages from ${topic}`);
+    await fetchOrThrow(url, {
+      method: "DELETE",
+      headers: maybeWithAuth({}, user),
+    });
+  }
+
   async topicAuth(baseUrl, topic, user) {
     const url = topicUrlAuth(baseUrl, topic);
     console.log(`[Api] Checking auth for ${url}`);

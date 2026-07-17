@@ -190,8 +190,20 @@ export class SubscriptionManager {
 
   /** Adds notification, or returns false if it already exists */
   async addNotification(subscriptionId, notification) {
+    if (notification.event === EVENT_MESSAGE_DELETE) {
+      console.log(`[SubscriptionManager] Deleting notification via message_delete event for ${subscriptionId}`);
+      const sequenceId = notification.sequence_id || notification.id;
+      await this.db.notifications.where({ subscriptionId, sequenceId }).delete();
+      return false;
+    }
+    if (notification.event === EVENT_MESSAGE_CLEAR) {
+      console.log(`[SubscriptionManager] Clearing notification via message_clear event for ${subscriptionId}`);
+      const sequenceId = notification.sequence_id || notification.id;
+      await this.db.notifications.where({ subscriptionId, sequenceId }).modify({ new: 0 });
+      return false;
+    }
     const exists = await this.db.notifications.get(notification.id);
-    if (exists || notification.event === EVENT_MESSAGE_DELETE || notification.event === EVENT_MESSAGE_CLEAR) {
+    if (exists) {
       return false;
     }
     try {
