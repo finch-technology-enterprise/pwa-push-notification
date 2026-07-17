@@ -56,5 +56,5 @@ TWILIO_ACCOUNT_SID = ""
 TWILIO_AUTH_TOKEN = ""
 TWILIO_FROM_NUMBER = ""
 
-[[triggers]]
+[triggers]
 crons = ["0 * * * *"]
