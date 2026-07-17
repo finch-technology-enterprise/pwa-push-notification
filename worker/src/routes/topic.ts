@@ -567,18 +567,25 @@ async function handleDelete(c: any): Promise<Response> {
 
   const id = generateId()
   const now = nowUnix()
-  const seqId = generateSequenceId()
 
+  // Use the original message's sequence_id so client-side deduplication works
+  const originalSeqId = existing.sequence_id as string
+
+  // Delete the original message from D1 so it's not replayed via polling
+  await DB.prepare('DELETE FROM messages WHERE id = ? AND topic = ?')
+    .bind(messageId, topic).run()
+
+  // Insert a message_delete event for traceability (DO processes this for live connections)
   await DB.prepare(
     `INSERT INTO messages (id, sequence_id, time, event, expires, scheduled_for, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user_id, content_type, encoding, published)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
-    id, seqId, now, 'message_delete', 0, 0, topic, existing.message, '', 3, '',
+    id, originalSeqId, now, 'message_delete', 0, 0, topic, existing.message, '', 3, '',
     '', '', '[]', '', '', 0, 0, '', '', '', '', '', 1
   ).run()
 
   const deleteMsg: PublishMessage = {
-    id, sequence_id: seqId, time: now, event: 'message_delete', topic,
+    id, sequence_id: originalSeqId, time: now, event: 'message_delete', topic,
     message: existing.message || undefined,
     poll_id: messageId,
   }
@@ -648,20 +655,29 @@ async function handleMessageClear(c: any): Promise<Response> {
     return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://ntfy.sh/docs' }, 403)
   }
 
+  const existing = await DB.prepare('SELECT * FROM messages WHERE id = ? AND topic = ?')
+    .bind(messageId, topic).first() as any | null
+
   const id = generateId()
   const now = nowUnix()
-  const seqId = generateSequenceId()
+
+  // Use original message's sequence_id for client-side deduplication
+  const originalSeqId = existing?.sequence_id || generateSequenceId()
+
+  // Delete the original message from D1
+  await DB.prepare('DELETE FROM messages WHERE id = ? AND topic = ?')
+    .bind(messageId, topic).run()
 
   await DB.prepare(
     `INSERT INTO messages (id, sequence_id, time, event, expires, scheduled_for, topic, message, title, priority, tags, click, icon, actions, attachment_name, attachment_type, attachment_size, attachment_expires, attachment_url, sender, user_id, content_type, encoding, published)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
-    id, seqId, now, 'message_clear', 0, 0, topic, '', '', 3, '',
+    id, originalSeqId, now, 'message_clear', 0, 0, topic, '', '', 3, '',
     '', '', '[]', '', '', 0, 0, '', '', '', '', '', 1
   ).run()
 
   const clearMsg: PublishMessage = {
-    id, sequence_id: seqId, time: now, event: 'message_clear', topic,
+    id, sequence_id: originalSeqId, time: now, event: 'message_clear', topic,
     poll_id: messageId,
   }
 
