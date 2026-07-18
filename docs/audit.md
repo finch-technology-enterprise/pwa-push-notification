@@ -1,6 +1,9 @@
 # Project Audit: ntfy-cf vs Original ntfy
 
-**Date**: 2026-07-17 (Final — post all parity fixes)
+> ⚠️ **This document is superseded by the comprehensive audit in `docs/audit/latest-audit-report.md`**.
+> The full audit (2026-07-18) contains 25 documented issues including newly discovered differences.
+
+**Date**: 2026-07-18
 **Scope**: Complete source code comparison
 **Original**: [binwiederhier/ntfy](https://github.com/binwiederhier/ntfy) (Go + React)
 **Workspace**: pwa-push-notification (TypeScript + Cloudflare Workers + React)
@@ -10,7 +13,7 @@
 ## Executive Summary
 
 **Frontend**: 99% identical clone — pixel-perfect match
-**Backend**: Complete reimplementation — **~98% feature parity** after all phases
+**Backend**: Complete reimplementation — **~93% feature parity** (revised after full audit)
 
 ---
 

@@ -75,6 +75,44 @@ app.post('/webpush', async (c) => {
   })
 })
 
+app.put('/webpush', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+
+  const auth = await authenticate(c)
+  const body = await c.req.json<{
+    endpoint?: string
+    id?: string
+    topics?: string[]
+  }>()
+
+  let subId: string | undefined
+  if (body.id) {
+    const row = await DB.prepare('SELECT id FROM webpush_subscription WHERE id = ?').bind(body.id).first<{ id: string }>()
+    subId = row?.id
+  } else if (body.endpoint) {
+    const row = await DB.prepare('SELECT id FROM webpush_subscription WHERE endpoint = ?').bind(body.endpoint).first<{ id: string }>()
+    subId = row?.id
+  }
+
+  if (!subId) {
+    return c.json({
+      code: 40401, http_code: 404, error: 'Subscription not found', link: 'https://ntfy.sh/docs',
+    }, 404)
+  }
+
+  if (body.topics && body.topics.length > 0) {
+    await DB.prepare('DELETE FROM webpush_subscription_topic WHERE subscription_id = ?').bind(subId).run()
+    for (const topic of body.topics) {
+      await DB.prepare(
+        'INSERT OR IGNORE INTO webpush_subscription_topic (subscription_id, topic) VALUES (?, ?)'
+      ).bind(subId, topic).run()
+    }
+  }
+
+  return c.json({ success: true, id: subId })
+})
+
 app.delete('/webpush', async (c) => {
   const { DB } = env(c)
   await initDatabase(DB)

@@ -119,6 +119,79 @@ app.delete('/account', async (c) => {
   return c.json({ success: true })
 })
 
+app.post('/account/login', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+
+  const ip = c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for') || 'unknown'
+  const rateCheck = await checkAuthRateLimit(DB, ip)
+  if (!rateCheck.allowed) {
+    return c.json({
+      code: 42901, http_code: 429, error: 'Too many login attempts. Try again later.', link: 'https://ntfy.sh/docs',
+    }, 429)
+  }
+
+  const authHeader = c.req.header('authorization') || c.req.header('Authorization')
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing Basic auth header', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  const decoded = atob(authHeader.slice(6))
+  const colonIdx = decoded.indexOf(':')
+  if (colonIdx === -1) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Invalid auth format', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  const loginUser = decoded.substring(0, colonIdx)
+  const loginPass = decoded.substring(colonIdx + 1)
+
+  if (!loginUser || !loginPass) {
+    return c.json({
+      code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://ntfy.sh/docs',
+    }, 400)
+  }
+
+  const user = await DB.prepare(
+    'SELECT id, user_name, pass, role FROM user WHERE user_name = ? AND deleted IS NULL'
+  ).bind(loginUser).first<{ id: string; user_name: string; pass: string; role: string }>()
+
+  if (!user) {
+    await recordAuthFailure(DB, ip)
+    return c.json({
+      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://ntfy.sh/docs',
+    }, 401)
+  }
+
+  const valid = await verifyPassword(loginPass, user.pass)
+  if (!valid) {
+    await recordAuthFailure(DB, ip)
+    return c.json({
+      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://ntfy.sh/docs',
+    }, 401)
+  }
+
+  const token = await generateToken()
+  const now = nowUnix()
+  const tokenExpires = now + 86400 * 365
+
+  await DB.prepare(
+    'INSERT INTO user_token (user_id, token, label, last_access, last_origin, expires, provisioned) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(user.id, token, 'web', now, '', tokenExpires, 0).run()
+
+  return c.json({
+    token,
+    username: user.user_name,
+    role: user.role,
+    id: user.id,
+    last_access: now,
+    expires: tokenExpires,
+  }, 201)
+})
+
 app.post('/account/token', async (c) => {
   const { DB } = env(c)
   await initDatabase(DB)
@@ -193,7 +266,7 @@ app.post('/account/token', async (c) => {
 
   return c.json({
     token,
-    user: user.user_name,
+    username: user.user_name,
     role: user.role,
     id: user.id,
     last_access: now,
@@ -508,6 +581,62 @@ app.delete('/account/email', async (c) => {
   return c.json({ success: true })
 })
 
+app.post('/account/email/resend', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  const body = await c.req.json<{ email: string }>().catch(() => ({ email: '' }))
+  if (!body.email) {
+    return c.json({ code: 40001, http_code: 400, error: 'Missing email', link: 'https://ntfy.sh/docs' }, 400)
+  }
+
+  const emailRow = await DB.prepare(
+    'SELECT email FROM user_email WHERE user_id = ? AND email = ?'
+  ).bind(auth.userId, body.email).first<{ email: string }>()
+
+  if (!emailRow) {
+    return c.json({ code: 40001, http_code: 400, error: 'Email not found', link: 'https://ntfy.sh/docs' }, 400)
+  }
+
+  const rawToken = await generateToken()
+  const now = nowUnix()
+  const expires = now + 3600
+
+  const tokenHashBytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rawToken))
+  const tokenHashHex = Array.from(new Uint8Array(tokenHashBytes)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+  await DB.prepare(
+    'INSERT INTO user_magic_link (token_hash, kind, user_id, email, expires, created) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(tokenHashHex, 'email-verify', auth.userId, body.email, expires, now).run()
+
+  return c.json({ success: true, token: rawToken })
+})
+
+app.post('/account/email/primary', async (c) => {
+  const { DB } = env(c)
+  await initDatabase(DB)
+  const auth = await requireAuth(c)
+
+  const body = await c.req.json<{ email: string }>().catch(() => ({ email: '' }))
+  if (!body.email) {
+    return c.json({ code: 40001, http_code: 400, error: 'Missing email', link: 'https://ntfy.sh/docs' }, 400)
+  }
+
+  const emailRow = await DB.prepare(
+    'SELECT is_primary FROM user_email WHERE user_id = ? AND email = ?'
+  ).bind(auth.userId, body.email).first<{ is_primary: number }>()
+
+  if (!emailRow) {
+    return c.json({ code: 40001, http_code: 400, error: 'Email not found', link: 'https://ntfy.sh/docs' }, 400)
+  }
+
+  await DB.prepare('UPDATE user_email SET is_primary = 0 WHERE user_id = ?').bind(auth.userId).run()
+  await DB.prepare('UPDATE user_email SET is_primary = 1 WHERE user_id = ? AND email = ?').bind(auth.userId, body.email).run()
+
+  return c.json({ success: true, email: body.email, is_primary: true })
+})
+
 app.post('/account/email/verify', async (c) => {
   const { DB, EMAIL, BASE_URL } = env(c)
   await initDatabase(DB)
@@ -552,21 +681,21 @@ app.post('/account/email/verify', async (c) => {
 })
 
 app.post('/account/password/reset/request', async (c) => {
-  const { DB, EMAIL, BASE_URL } = env(c)
+  const { DB, BASE_URL } = env(c)
   await initDatabase(DB)
 
-  const body = await c.req.json<{ email: string }>()
-  if (!body.email) {
+  const body = await c.req.json<{ username: string }>()
+  if (!body.username) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing email', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing username', link: 'https://ntfy.sh/docs',
     }, 400)
   }
 
-  const userEmail = await DB.prepare(
-    'SELECT u.id, u.user_name FROM user u JOIN user_email e ON e.user_id = u.id WHERE e.email = ? AND u.deleted IS NULL'
-  ).bind(body.email).first<{ id: string; user_name: string }>()
+  const user = await DB.prepare(
+    'SELECT id, user_name FROM user WHERE user_name = ? AND deleted IS NULL'
+  ).bind(body.username).first<{ id: string; user_name: string }>()
 
-  if (userEmail) {
+  if (user) {
     const rawToken = await generateToken()
     const now = nowUnix()
     const expires = now + 3600
@@ -576,16 +705,15 @@ app.post('/account/password/reset/request', async (c) => {
 
     await DB.prepare(
       'INSERT INTO user_magic_link (token_hash, kind, user_id, email, expires, created) VALUES (?, ?, ?, ?, ?, ?)'
-    ).bind(tokenHashHex, 'password-reset', userEmail.id, body.email, expires, now).run()
+    ).bind(tokenHashHex, 'password-reset', user.id, '', expires, now).run()
 
-    const resetUrl = `${BASE_URL}/app/password-reset?token=${rawToken}`
+    const resetUrl = `${BASE_URL}/account/password/reset/${rawToken}`
 
-    await sendEmail(EMAIL, {
-      to: body.email,
-      from: { email: 'notify@finchtech.my', name: 'PWA Push Notification' },
-      subject: 'Reset your password',
-      text: `Hi ${userEmail.user_name},\n\nYou requested a password reset. Click this link to reset your password:\n${resetUrl}\n\nThis link expires in 1 hour.\nIf you didn't request this, you can ignore this email.\n\n- PWA Push`,
-      html: `<h2>Password Reset</h2><p>Hi ${userEmail.user_name},</p><p>You requested a password reset. Click the button below to reset your password:</p><p><a href="${resetUrl}" style="display:inline-block;padding:12px 24px;background:#088f8f;color:#fff;text-decoration:none;border-radius:4px">Reset Password</a></p><p>This link expires in 1 hour.</p><p>If you didn't request this, you can ignore this email.</p>`,
+    return c.json({
+      success: true,
+      token: rawToken,
+      reset_url: resetUrl,
+      expires,
     })
   }
 

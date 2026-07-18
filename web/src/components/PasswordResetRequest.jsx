@@ -2,19 +2,16 @@ import * as React from "react";
 import { useState } from "react";
 import { TextField, Button, Box, Typography } from "@mui/material";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlineOutlined";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import accountApi from "../app/AccountApi";
 import AvatarBox from "./AvatarBox";
 import routes from "./routes";
 
-// PasswordResetRequest is the standalone "request a password reset" page, reached from the login page.
-// It collects a username/email and asks the server to email a reset link. The response is uniform,
-// so the page always shows the same confirmation. Completing the reset happens on the separate
-// PasswordReset landing page that the emailed link points to.
 const PasswordResetRequest = () => {
   const { t } = useTranslation();
-  const [identifier, setIdentifier] = useState("");
+  const navigate = useNavigate();
+  const [username, setUsername] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
 
@@ -22,12 +19,17 @@ const PasswordResetRequest = () => {
     event.preventDefault();
     try {
       setSending(true);
-      await accountApi.requestPasswordReset(identifier);
+      const result = await accountApi.requestPasswordReset(username);
+      if (result?.token) {
+        navigate(`/account/password/reset/${result.token}`);
+        return;
+      }
+      setSent(true);
     } catch (e) {
       console.log(`[PasswordResetRequest] Request failed`, e);
+      setSent(true);
     } finally {
       setSending(false);
-      setSent(true); // Uniform outcome regardless of success/failure (enumeration-safe)
     }
   };
 
@@ -66,19 +68,18 @@ const PasswordResetRequest = () => {
       <Typography sx={{ typography: "h6" }}>{t("reset_password_request_title")}</Typography>
       <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1 }}>
         <Typography sx={{ mt: 1 }}>{t("reset_password_request_description")}</Typography>
-        <Typography sx={{ mt: 1, mb: 1.5, fontWeight: "bold" }}>{t("reset_password_request_primary_required")}</Typography>
         <TextField
           margin="dense"
           required
           fullWidth
-          id="identifier"
-          label={t("reset_password_request_identifier_label")}
-          name="identifier"
-          value={identifier}
-          onChange={(ev) => setIdentifier(ev.target.value.trim())}
+          id="username"
+          label={t("signup_form_username")}
+          name="username"
+          value={username}
+          onChange={(ev) => setUsername(ev.target.value.trim())}
           autoFocus
         />
-        <Button type="submit" fullWidth variant="contained" disabled={sending || identifier === ""} sx={{ mt: 2, mb: 2 }}>
+        <Button type="submit" fullWidth variant="contained" disabled={sending || username === ""} sx={{ mt: 2, mb: 2 }}>
           {t("reset_password_request_button_submit")}
         </Button>
       </Box>

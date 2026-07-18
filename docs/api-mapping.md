@@ -2,7 +2,9 @@
 
 This document describes how the original [ntfy REST API](https://ntfy.sh/docs/api/) maps to this Cloudflare-based implementation.
 
-**Last updated**: Final — post parity fixes (Phases 1-4 complete)
+**Last updated**: 2026-07-18 — full audit
+
+> See [docs/audit/latest-audit-report.md](audit/latest-audit-report.md) for the complete issue registry.
 
 ---
 
@@ -36,6 +38,7 @@ This document describes how the original [ntfy REST API](https://ntfy.sh/docs/ap
 | ntfy Header | ntfy-cf | Notes |
 |-------------|---------|-------|
 | `Title` / `X-Title` / `t` | ✅ | |
+| `Attach` / `X-Attach` / `a` | ✅ | External attachment URL — AUDIT-007 fixed |
 | `Priority` / `X-Priority` / `p` | ✅ | |
 | `Tags` / `X-Tags` / `ta` | ✅ | |
 | `Click` / `X-Click` | ✅ | |
@@ -89,7 +92,7 @@ This document describes how the original [ntfy REST API](https://ntfy.sh/docs/ap
 |--------------|---------|-------|
 | `POST /v1/webpush` | ✅ | Register/update subscription |
 | `DELETE /v1/webpush` | ✅ | Remove subscription |
-| `PUT /v1/webpush` | ❌ | Partial update not supported |
+| `PUT /v1/webpush` | ✅ | Partial topic update supported — AUDIT-006 fixed |
 
 ### Account Management
 
@@ -98,7 +101,7 @@ This document describes how the original [ntfy REST API](https://ntfy.sh/docs/ap
 | `POST /v1/account` | ✅ | Sign-up |
 | `GET /v1/account` | ✅ | Get account details |
 | `DELETE /v1/account` | ✅ | Soft-delete account |
-| `POST /v1/account/login` | ✅ | Login (returns token) |
+| `POST /v1/account/login` | ✅ | Dedicated login endpoint returns `{token, username}` — AUDIT-001/002 fixed |
 | `POST /v1/account/password` | ✅ | Change password |
 | `POST /v1/account/token` | ✅ | Create API token |
 | `PATCH /v1/account/token` | ✅ | Extend token expiry |
@@ -115,8 +118,8 @@ This document describes how the original [ntfy REST API](https://ntfy.sh/docs/ap
 | `PUT /v1/account/email` | ✅ | Add email address |
 | `POST /v1/account/email/verify` | ✅ | Verify email (magic link) |
 | `DELETE /v1/account/email` | ✅ | Remove email address |
-| `POST /v1/account/email/primary` | ⚠️ | Stub — not implemented |
-| `POST /v1/account/email/resend` | ⚠️ | Stub — not implemented |
+| `POST /v1/account/email/primary` | ✅ | Set primary email — AUDIT-020 fixed |
+| `POST /v1/account/email/resend` | ✅ | Resend verification email — AUDIT-020 fixed |
 | `POST /v1/account/password/reset/request` | ✅ | Request password reset |
 | `POST /v1/account/password/reset` | ✅ | Confirm password reset |
 | `POST /v1/account/fcm` | ✅ | Register FCM subscription |
@@ -150,14 +153,14 @@ This document describes how the original [ntfy REST API](https://ntfy.sh/docs/ap
 
 ## Feature Parity Summary
 
-| Category | Total Features | Implemented | Missing | Parity |
-|----------|---------------|-------------|---------|--------|
+| Category | Total Features | Implemented | Missing/Stubbed | Parity |
+|----------|---------------|-------------|-----------------|--------|
 | Topic operations | 18 | 18 | 0 | **100%** |
-| Publish headers | 22 | 21 | 1 | **95%** |
+| Publish headers | 22 | 22 | 0 | **100%** |
 | Subscribe params | 8 | 8 | 0 | **100%** |
 | Server endpoints | 8 | 7 | 1 | **88%** |
-| Web Push | 3 | 2 | 1 | **67%** |
-| Account management | 30 | 27 | 3 | **90%** |
+| Web Push | 3 | 3 | 0 | **100%** |
+| Account management | 30 | 28 | 2 | **93%** |
 | Admin | 6 | 6 | 0 | **100%** |
 | Matrix | 2 | 2 | 0 | **100%** |
-| **Total** | **97** | **91** | **6** | **~94%** |
+| **Total** | **97** | **94** | **3** | **~97%** |

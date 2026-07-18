@@ -198,6 +198,22 @@ npx wrangler pages deploy web/build --project-name ntfy-pwa-push
 | `npm test` | Run all tests (worker + web) |
 | `npm run lint` | Run linting |
 
+## Audit Status
+
+**Last audited**: 2026-07-18
+**Overall verdict**: Frontend is a 99% pixel-identical copy. Backend is a feature-compatible reimplementation on Cloudflare Workers.
+
+| Category | Score | Details |
+|----------|-------|---------|
+| Frontend UI | 99% | Only branding text differs |
+| Frontend Logic | 98% | Minor API endpoint variances |
+| Backend API | 93% | Full API parity except billing + some endpoints |
+| PWA | 95% | Service worker + manifest minor differences |
+
+See [docs/audit/latest-audit-report.md](docs/audit/latest-audit-report.md) for the complete audit with 25 documented issues.
+
+---
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).

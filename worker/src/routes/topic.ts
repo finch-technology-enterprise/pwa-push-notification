@@ -126,6 +126,7 @@ async function handlePublish(c: any): Promise<Response> {
 
   const msgSizeLimit = parseInt(MESSAGE_SIZE_LIMIT || '4096', 10)
   const xFilename = c.req.header('X-Filename') || ''
+  const xAttach = c.req.header('X-Attach') || c.req.header('Attach') || c.req.header('a') || ''
 
   let attachmentName = ''
   let attachmentType = ''
@@ -135,11 +136,17 @@ async function handlePublish(c: any): Promise<Response> {
   let msgBody = body
   const { BASE_URL, ATTACHMENTS, ATTACHMENT_FILE_SIZE_LIMIT } = env(c)
 
-  if (xFilename || body.length > msgSizeLimit) {
+  // X-Attach: external attachment URL — store URL directly without uploading to R2
+  if (xAttach) {
+    attachmentUrl = xAttach
+    attachmentName = c.req.header('X-Filename') || xAttach.split('/').pop() || 'attachment'
+    attachmentType = c.req.header('Content-Type') || ''
+    attachmentExpires = nowUnix() + 86400 * 30
+  } else if (xFilename || body.length > msgSizeLimit) {
     const attachId = generateId()
     const fname = xFilename || `message-${attachId}.txt`
     const bodyBytes = new TextEncoder().encode(body)
-    const attachContentType = c.req.header('Content-Type') || 'text/plain'
+    const attachContentType = c.req.header('Content-Type') || ''
 
     const fileSizeLimit = parseInt(ATTACHMENT_FILE_SIZE_LIMIT || '10485760', 10)
     if (bodyBytes.length > fileSizeLimit) {

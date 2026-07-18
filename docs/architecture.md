@@ -151,3 +151,11 @@ React SPA built with Vite, Material UI 9, and `vite-plugin-pwa`. Near-identical 
 | Stripe billing webhook/portal | ⚠️ Stubbed | Needs Stripe secret integration |
 | Upstream forwarding | ❌ | N/A (this IS the upstream) |
 | Attachment bandwidth tracking | ❌ | Not implemented |
+| Dedicated `/v1/account/login` endpoint | ❌ | Uses `/v1/account/token` instead (merged) |
+| `PUT /v1/webpush` partial update | ❌ | Not implemented |
+| `X-Attach` (external attachment URLs) | ❌ | Only file upload supported |
+| Phone number verification | ⚠️ Stubbed | Twilio verify not integrated |
+| Email resend/primary endpoints | ⚠️ Stubbed | Not implemented |
+| Password reset via email | ⚠️ Modified | Returns token directly (no email configured) |
+
+A complete audit of all differences is maintained in [docs/audit/latest-audit-report.md](audit/latest-audit-report.md).

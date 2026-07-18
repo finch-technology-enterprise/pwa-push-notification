@@ -6,6 +6,7 @@ import {
   accountEmailVerifyUrl,
   accountEmailPrimaryUrl,
   accountEmailResendUrl,
+  accountLoginUrl,
   accountPasswordResetRequestUrl,
   accountPasswordResetUrl,
   accountPasswordUrl,
@@ -47,8 +48,8 @@ class AccountApi {
   }
 
   async login(user) {
-    const url = accountTokenUrl(config.base_url);
-    console.log(`[AccountApi] Checking auth for ${url}`);
+    const url = accountLoginUrl(config.base_url);
+    console.log(`[AccountApi] Logging in at ${url}`);
     const response = await fetchOrThrow(url, {
       method: "POST",
       headers: withBasicAuth({}, user.username, user.password),
@@ -57,7 +58,8 @@ class AccountApi {
     if (!json.token) {
       throw new Error(`Unexpected server response: Cannot find token`);
     }
-    return json.token;
+    // Return both token and canonical username from server
+    return { token: json.token, username: json.username || user.username };
   }
 
   async logout() {
@@ -400,17 +402,18 @@ class AccountApi {
     });
   }
 
-  // requestPasswordReset starts the (unauthenticated) reset flow. The identifier is a username or
-  // primary email. The server always responds uniformly, regardless of whether an account matched.
-  async requestPasswordReset(identifier) {
+  // requestPasswordReset starts the (unauthenticated) reset flow. The username identifies the
+  // account. The server returns a raw reset token (no email required in dev mode).
+  async requestPasswordReset(username) {
     const url = accountPasswordResetRequestUrl(config.base_url);
     console.log(`[AccountApi] Requesting password reset ${url}`);
-    await fetchOrThrow(url, {
+    const response = await fetchOrThrow(url, {
       method: "POST",
       body: JSON.stringify({
-        identifier,
+        username,
       }),
     });
+    return response.json();
   }
 
   // resetPassword performs the (unauthenticated) reset from the set-new-password landing page.

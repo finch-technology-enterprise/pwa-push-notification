@@ -24,9 +24,9 @@ const Login = () => {
     event.preventDefault();
     const user = { username, password };
     try {
-      const token = await accountApi.login(user);
-      console.log(`[Login] User auth for user ${user.username} successful, token is ${token}`);
-      await session.store(user.username, token);
+      const result = await accountApi.login(user);
+      console.log(`[Login] User auth for user ${result.username} successful, token is ${result.token}`);
+      await session.store(result.username, result.token);
       fadeReload(routes.app);
     } catch (e) {
       console.log(`[Login] User auth for user ${user.username} failed`, e);

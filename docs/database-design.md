@@ -1,5 +1,9 @@
 # Database Design
 
+**Last audited**: 2026-07-18
+
+> See [docs/audit/latest-audit-report.md](audit/latest-audit-report.md) for database-related issues including AUDIT-014 (D1 latency), AUDIT-016 (no read replicas).
+
 ntfy-cf uses **Cloudflare D1** (a SQLite-compatible serverless relational database) for all persistent storage. The schema is defined in [`worker/src/db.ts`](../worker/src/db.ts) and the SQL migration file is at [`migrations/0001_initial.sql`](../migrations/0001_initial.sql).
 
 ---
