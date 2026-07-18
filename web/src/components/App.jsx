@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Suspense, useContext, useEffect, useState, useMemo } from "react";
+import { lazy, Suspense, useContext, useEffect, useState, useMemo } from "react";
 import { Box, Toolbar, CssBaseline, Backdrop, CircularProgress, useMediaQuery, ThemeProvider, createTheme } from "@mui/material";
 import { useLiveQuery } from "dexie-react-hooks";
 import { BrowserRouter, Outlet, Route, Routes, useParams } from "react-router-dom";
@@ -8,7 +8,6 @@ import { AllSubscriptions, SingleSubscription } from "./Notifications";
 import { darkTheme, lightTheme } from "./theme";
 import Navigation from "./Navigation";
 import ActionBar from "./ActionBar";
-import Preferences from "./Preferences";
 import subscriptionManager from "../app/SubscriptionManager";
 import userManager from "../app/UserManager";
 import { expandUrl, getKebabCaseLangStr, darkModeEnabled, updateFavicon } from "../app/utils";
@@ -17,12 +16,14 @@ import routes from "./routes";
 import { useAccountListener, useBackgroundProcesses, useConnectionListeners, useWebPushTopics } from "./hooks";
 import PublishDialog from "./PublishDialog";
 import Messaging from "./Messaging";
-import Login from "./Login";
-import Signup from "./Signup";
-import Account from "./Account";
-import EmailVerify from "./EmailVerify";
-import PasswordReset from "./PasswordReset";
-import PasswordResetRequest from "./PasswordResetRequest";
+
+const Login = lazy(() => import("./Login"));
+const Signup = lazy(() => import("./Signup"));
+const Account = lazy(() => import("./Account"));
+const Preferences = lazy(() => import("./Preferences"));
+const EmailVerify = lazy(() => import("./EmailVerify"));
+const PasswordReset = lazy(() => import("./PasswordReset"));
+const PasswordResetRequest = lazy(() => import("./PasswordResetRequest"));
 import initI18n from "../app/i18n"; // Translations!
 import prefs from "../app/Prefs";
 import RTLCacheProvider from "./RTLCacheProvider";

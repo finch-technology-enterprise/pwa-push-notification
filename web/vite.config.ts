@@ -1,6 +1,22 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+
+function suppressDeprecatedWarning(): Plugin {
+  return {
+    name: "suppress-deprecated-warning",
+    config(config) {
+      config.build ??= {};
+      config.build.rollupOptions ??= {};
+      const onwarn = config.build.rollupOptions.onwarn;
+      config.build.rollupOptions.onwarn = (warning, warn) => {
+        if (warning.message?.includes("inlineDynamicImports")) return;
+        if (typeof onwarn === "function") onwarn(warning, warn);
+        else warn(warning);
+      };
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => ({
   build: {
@@ -17,6 +33,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
+    suppressDeprecatedWarning(),
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: null,
