@@ -38,7 +38,7 @@ describe("isImage", () => {
 
   it("falls back to the file extension when there is no type", () => {
     expect(isImage({ name: "photo.JPEG" })).toBeTruthy();
-    expect(isImage({ url: "https://ntfy.sh/file/x.webp" })).toBeTruthy();
+    expect(isImage({ url: "https://pwa-push-notification.finchtech-my.workers.dev/file/x.webp" })).toBeTruthy();
     expect(isImage({ name: "notes.txt" })).toBeFalsy();
   });
 
@@ -49,7 +49,7 @@ describe("isImage", () => {
 
 describe("notificationTag", () => {
   it("scopes the tag by baseUrl, topic and sequence id", () => {
-    expect(notificationTag("https://ntfy.sh", "mytopic", 42)).toBe("https://ntfy.sh/mytopic/42");
+    expect(notificationTag("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic", 42)).toBe("https://pwa-push-notification.finchtech-my.workers.dev/mytopic/42");
   });
 });
 
@@ -71,15 +71,15 @@ describe("toNotificationParams", () => {
       message: baseMessage,
       defaultTitle: "fallback",
       topicRoute: "/mytopic",
-      baseUrl: "https://ntfy.sh",
+      baseUrl: "https://pwa-push-notification.finchtech-my.workers.dev",
       topic: "mytopic",
     });
 
     expect(title).toBe("Title");
     expect(options.body).toBe("Body");
-    expect(options.tag).toBe("https://ntfy.sh/mytopic/msg-1");
+    expect(options.tag).toBe("https://pwa-push-notification.finchtech-my.workers.dev/mytopic/msg-1");
     expect(options.timestamp).toBe(baseMessage.time * 1000);
-    expect(options.data.subscriptionId).toBe("https://ntfy.sh/mytopic");
+    expect(options.data.subscriptionId).toBe("https://pwa-push-notification.finchtech-my.workers.dev/mytopic");
     expect(options.data.topicRoute).toBe("/mytopic");
   });
 
@@ -88,7 +88,7 @@ describe("toNotificationParams", () => {
       message: baseMessage,
       defaultTitle: "fallback",
       topicRoute: "/mytopic",
-      baseUrl: "https://ntfy.sh",
+      baseUrl: "https://pwa-push-notification.finchtech-my.workers.dev",
       topic: "mytopic",
     });
     expect(options.actions).toEqual([
@@ -102,7 +102,7 @@ describe("toNotificationParams", () => {
       message: { id: "x", time: 1, message: "Body" },
       defaultTitle: "fallback",
       topicRoute: "/mytopic",
-      baseUrl: "https://ntfy.sh",
+      baseUrl: "https://pwa-push-notification.finchtech-my.workers.dev",
       topic: "mytopic",
     });
     expect(title).toBe("fallback");
@@ -113,10 +113,10 @@ describe("toNotificationParams", () => {
       message: { ...baseMessage, sequence_id: 99 },
       defaultTitle: "fallback",
       topicRoute: "/mytopic",
-      baseUrl: "https://ntfy.sh",
+      baseUrl: "https://pwa-push-notification.finchtech-my.workers.dev",
       topic: "mytopic",
     });
-    expect(options.tag).toBe("https://ntfy.sh/mytopic/99");
+    expect(options.tag).toBe("https://pwa-push-notification.finchtech-my.workers.dev/mytopic/99");
   });
 });
 

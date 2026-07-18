@@ -48,7 +48,7 @@ describe("AccountApi.login", () => {
 
     expect(token).toBe("tk_returned");
     const [url, options] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://ntfy.sh/v1/account/token");
+    expect(url).toBe("https://pwa-push-notification.finchtech-my.workers.dev/v1/account/token");
     expect(options.method).toBe("POST");
     expect(options.headers.Authorization).toBe(`Basic ${btoa("phil:secret")}`);
   });
@@ -64,7 +64,7 @@ describe("AccountApi.create", () => {
     fetchMock.mockResolvedValue(ok());
     await accountApi.create("phil", "pw");
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://ntfy.sh/v1/account",
+      "https://pwa-push-notification.finchtech-my.workers.dev/v1/account",
       expect.objectContaining({ method: "POST", body: JSON.stringify({ username: "phil", password: "pw", email: "" }) }),
     );
   });
@@ -81,7 +81,7 @@ describe("AccountApi.get", () => {
     expect(account).toEqual({ username: "phil" });
     expect(listener).toHaveBeenCalledWith({ username: "phil" });
     const [url, options] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://ntfy.sh/v1/account");
+    expect(url).toBe("https://pwa-push-notification.finchtech-my.workers.dev/v1/account");
     expect(options.headers.Authorization).toBe("Bearer test-token");
   });
 });
@@ -129,21 +129,21 @@ describe("AccountApi.deleteToken", () => {
 describe("AccountApi subscriptions", () => {
   it("addSubscription POSTs base_url/topic and returns the parsed subscription", async () => {
     fetchMock.mockResolvedValue(ok({ id: "sub_1" }));
-    const subscription = await accountApi.addSubscription("https://ntfy.sh", "mytopic");
+    const subscription = await accountApi.addSubscription("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic");
 
     expect(subscription).toEqual({ id: "sub_1" });
     const [url, options] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://ntfy.sh/v1/account/subscription");
+    expect(url).toBe("https://pwa-push-notification.finchtech-my.workers.dev/v1/account/subscription");
     expect(options.method).toBe("POST");
-    expect(JSON.parse(options.body)).toEqual({ base_url: "https://ntfy.sh", topic: "mytopic" });
+    expect(JSON.parse(options.body)).toEqual({ base_url: "https://pwa-push-notification.finchtech-my.workers.dev", topic: "mytopic" });
   });
 
   it("deleteSubscription passes baseUrl/topic via headers", async () => {
     fetchMock.mockResolvedValue(ok());
-    await accountApi.deleteSubscription("https://ntfy.sh", "mytopic");
+    await accountApi.deleteSubscription("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic");
     const [, options] = fetchMock.mock.calls[0];
     expect(options.method).toBe("DELETE");
-    expect(options.headers["X-BaseURL"]).toBe("https://ntfy.sh");
+    expect(options.headers["X-BaseURL"]).toBe("https://pwa-push-notification.finchtech-my.workers.dev");
     expect(options.headers["X-Topic"]).toBe("mytopic");
   });
 });
@@ -165,7 +165,7 @@ describe("AccountApi.requestPasswordReset", () => {
     fetchMock.mockResolvedValue(ok());
     await accountApi.requestPasswordReset("phil");
     const [url, options] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://ntfy.sh/v1/account/password/reset/request");
+    expect(url).toBe("https://pwa-push-notification.finchtech-my.workers.dev/v1/account/password/reset/request");
     expect(options.body).toBe(JSON.stringify({ identifier: "phil" }));
     expect(options.headers).toBeUndefined();
   });

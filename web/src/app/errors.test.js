@@ -80,7 +80,7 @@ describe("fetchOrThrow", () => {
       "fetch",
       vi.fn(async () => response),
     );
-    await expect(fetchOrThrow("https://ntfy.sh/mytopic/json")).resolves.toBe(response);
+    await expect(fetchOrThrow("https://pwa-push-notification.finchtech-my.workers.dev/mytopic/json")).resolves.toBe(response);
   });
 
   it("throws on a non-200 response", async () => {
@@ -88,6 +88,6 @@ describe("fetchOrThrow", () => {
       "fetch",
       vi.fn(async () => fakeResponse(401)),
     );
-    await expect(fetchOrThrow("https://ntfy.sh/mytopic/json")).rejects.toBeInstanceOf(UnauthorizedError);
+    await expect(fetchOrThrow("https://pwa-push-notification.finchtech-my.workers.dev/mytopic/json")).rejects.toBeInstanceOf(UnauthorizedError);
   });
 });

@@ -35,33 +35,33 @@ import {
 
 describe("URL builders", () => {
   it("build topic URLs", () => {
-    expect(topicUrl("https://ntfy.sh", "mytopic")).toBe("https://ntfy.sh/mytopic");
-    expect(topicUrlJsonPollWithSince("https://ntfy.sh", "mytopic", 123)).toBe("https://ntfy.sh/mytopic/json?poll=1&since=123");
+    expect(topicUrl("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic")).toBe("https://pwa-push-notification.finchtech-my.workers.dev/mytopic");
+    expect(topicUrlJsonPollWithSince("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic", 123)).toBe("https://pwa-push-notification.finchtech-my.workers.dev/mytopic/json?poll=1&since=123");
   });
 
   it("rewrite the scheme for websocket URLs", () => {
-    expect(topicUrlWs("https://ntfy.sh", "mytopic")).toBe("wss://ntfy.sh/mytopic/ws");
+    expect(topicUrlWs("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic")).toBe("wss://ntfy.sh/mytopic/ws");
     expect(topicUrlWs("http://localhost:8080", "mytopic")).toBe("ws://localhost:8080/mytopic/ws");
   });
 
   it("build account URLs", () => {
-    expect(accountUrl("https://ntfy.sh")).toBe("https://ntfy.sh/v1/account");
-    expect(accountTokenUrl("https://ntfy.sh")).toBe("https://ntfy.sh/v1/account/token");
+    expect(accountUrl("https://pwa-push-notification.finchtech-my.workers.dev")).toBe("https://pwa-push-notification.finchtech-my.workers.dev/v1/account");
+    expect(accountTokenUrl("https://pwa-push-notification.finchtech-my.workers.dev")).toBe("https://pwa-push-notification.finchtech-my.workers.dev/v1/account/token");
   });
 });
 
 describe("url helpers", () => {
   it("strip the scheme with shortUrl", () => {
-    expect(shortUrl("https://ntfy.sh/mytopic")).toBe("ntfy.sh/mytopic");
+    expect(shortUrl("https://pwa-push-notification.finchtech-my.workers.dev/mytopic")).toBe("ntfy.sh/mytopic");
   });
 
   it("expand a bare host to both schemes", () => {
-    expect(expandUrl("ntfy.sh")).toEqual(["https://ntfy.sh", "http://ntfy.sh"]);
-    expect(expandSecureUrl("ntfy.sh")).toBe("https://ntfy.sh");
+    expect(expandUrl("ntfy.sh")).toEqual(["https://pwa-push-notification.finchtech-my.workers.dev", "http://ntfy.sh"]);
+    expect(expandSecureUrl("ntfy.sh")).toBe("https://pwa-push-notification.finchtech-my.workers.dev");
   });
 
   it("validate http(s) URLs", () => {
-    expect(validUrl("https://ntfy.sh")).toBeTruthy();
+    expect(validUrl("https://pwa-push-notification.finchtech-my.workers.dev")).toBeTruthy();
     expect(validUrl("http://ntfy.sh")).toBeTruthy();
     expect(validUrl("ftp://ntfy.sh")).toBeFalsy();
   });
@@ -220,7 +220,7 @@ describe("date/time formatting", () => {
 
 describe("sanitizeUrl", () => {
   it("keeps safe absolute URLs", () => {
-    expect(sanitizeUrl("https://ntfy.sh")).toBe("https://ntfy.sh");
+    expect(sanitizeUrl("https://pwa-push-notification.finchtech-my.workers.dev")).toBe("https://pwa-push-notification.finchtech-my.workers.dev");
     expect(sanitizeUrl("http://example.com/foo?bar=1")).toBe("http://example.com/foo?bar=1");
     expect(sanitizeUrl("mailto:phil@ntfy.sh")).toBe("mailto:phil@ntfy.sh");
     expect(sanitizeUrl("ftp://ftp.example.com/file.txt")).toBe("ftp://ftp.example.com/file.txt");

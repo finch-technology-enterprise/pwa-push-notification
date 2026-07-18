@@ -130,7 +130,7 @@ export const SubscriptionPopup = (props) => {
         timeFormat,
       )} already. Boy oh boy, where did the time go? I hope you're alright, friend.`,
       `There are nine million bicycles in Beijing That's a fact; It's a thing we can't deny. I wonder if that's true ...`,
-      `I'm really excited that you're trying out ntfy. Did you know that there are a few public topics, such as ntfy.sh/stats and ntfy.sh/announcements.`,
+      `Did you know there are public topics such as ntfy.sh/stats and ntfy.sh/announcements.`,
       `It's interesting to hear what people use ntfy for. I've heard people talk about using it for so many cool things. What do you use it for?`,
     ])[0];
     try {

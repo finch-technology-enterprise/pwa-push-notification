@@ -32,7 +32,7 @@ async function handleRootPublish(c: any): Promise<Response> {
   const body = await c.req.json().catch(() => ({}))
   const topic = body.topic
   if (!topic || !TOPIC_REGEX.test(topic)) {
-    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://docs.ntfy.sh' }, 400)
   }
   const headers = new Headers(c.req.raw.headers)
   if (body.title) headers.set('X-Title', String(body.title))
@@ -63,14 +63,14 @@ async function handleUpdate(c: any): Promise<Response> {
   await initDatabase(DB)
 
   if (!topic || !TOPIC_REGEX.test(topic) || !sequenceId) {
-    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic or sequence ID', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic or sequence ID', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const existing = await DB.prepare('SELECT id FROM messages WHERE sequence_id = ? AND topic = ?')
     .bind(sequenceId, topic).first() as any | null
 
   if (!existing) {
-    return c.json({ code: 40401, http_code: 404, error: 'Message not found', link: 'https://ntfy.sh/docs' }, 404)
+    return c.json({ code: 40401, http_code: 404, error: 'Message not found', link: 'https://docs.ntfy.sh' }, 404)
   }
 
   // Forward to publish with X-Sequence-ID set so the existing message is updated
@@ -99,25 +99,25 @@ async function handlePublish(c: any): Promise<Response> {
   await initDatabase(DB)
 
   if (!topic || !TOPIC_REGEX.test(topic)) {
-    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const disallowed = (DISALLOWED_TOPICS || '').split(',').map((s: string) => s.trim()).filter(Boolean)
   if (disallowed.length === 0) disallowed.push(...DISALLOWED_TOPICS_DEFAULT)
   if (disallowed.includes(topic)) {
-    return c.json({ code: 40001, http_code: 400, error: 'Disallowed topic', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Disallowed topic', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const auth = await authenticate(c)
 
   const { read, write } = await checkTopicAccess(DB, auth.userId, topic)
   if (!write) {
-    return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://ntfy.sh/docs' }, 403)
+    return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://docs.ntfy.sh' }, 403)
   }
 
   const limitResult = await checkMessageDailyLimit(DB, auth.userId, VISITOR_MESSAGE_DAILY_LIMIT || '0')
   if (!limitResult.allowed) {
-    return c.json({ code: 40303, http_code: 403, error: limitResult.error!, link: 'https://ntfy.sh/docs' }, 403)
+    return c.json({ code: 40303, http_code: 403, error: limitResult.error!, link: 'https://docs.ntfy.sh' }, 403)
   }
 
   const body = (await c.req.text().catch(() => '')) || c.req.query('message') || ''
@@ -150,7 +150,7 @@ async function handlePublish(c: any): Promise<Response> {
 
     const fileSizeLimit = parseInt(ATTACHMENT_FILE_SIZE_LIMIT || '10485760', 10)
     if (bodyBytes.length > fileSizeLimit) {
-      return c.json({ code: 40001, http_code: 400, error: `Message exceeds ${fileSizeLimit} bytes`, link: 'https://ntfy.sh/docs' }, 400)
+      return c.json({ code: 40001, http_code: 400, error: `Message exceeds ${fileSizeLimit} bytes`, link: 'https://docs.ntfy.sh' }, 400)
     }
 
     const expireTime = nowUnix()
@@ -261,8 +261,8 @@ async function handlePublish(c: any): Promise<Response> {
           const { sendEmail } = await import('./email')
           await sendEmail(EMAIL, {
             to: resolvedEmail,
-            from: { email: 'notify@finchtech.my', name: 'ntfy' },
-            subject: title || `ntfy: ${topic}`,
+            from: { email: 'notify@finchtech.my', name: 'PWA Push Notification' },
+            subject: title || `PWA Push: ${topic}`,
             text: msgBody || 'You received a notification',
           })
         }
@@ -277,7 +277,7 @@ async function handlePublish(c: any): Promise<Response> {
       try {
         const resolvedPhone = await resolveCallTarget(DB, callTarget, auth)
         if (resolvedPhone && TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_FROM_NUMBER) {
-          const message = msgBody || title || 'Notification from ntfy'
+          const message = msgBody || title || 'Notification from PWA Push'
           const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">${sanitizeHtml(message)}</Say></Response>`
           const authStr = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)
           await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`, {
@@ -317,12 +317,12 @@ async function handleSubscribe(c: any): Promise<Response> {
   const topics = topicParam.split(',').map((t: string) => t.trim()).filter(Boolean)
 
   if (topics.length === 0) {
-    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400) as Response
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://docs.ntfy.sh' }, 400) as Response
   }
 
   for (const topic of topics) {
     if (!TOPIC_REGEX.test(topic)) {
-      return c.json({ code: 40001, http_code: 400, error: `Invalid topic: ${topic}`, link: 'https://ntfy.sh/docs' }, 400) as Response
+      return c.json({ code: 40001, http_code: 400, error: `Invalid topic: ${topic}`, link: 'https://docs.ntfy.sh' }, 400) as Response
     }
   }
 
@@ -330,7 +330,7 @@ async function handleSubscribe(c: any): Promise<Response> {
   if (disallowed.length === 0) disallowed.push(...DISALLOWED_TOPICS_DEFAULT)
   for (const topic of topics) {
     if (disallowed.includes(topic)) {
-      return c.json({ code: 40001, http_code: 400, error: `Disallowed topic: ${topic}`, link: 'https://ntfy.sh/docs' }, 400) as Response
+      return c.json({ code: 40001, http_code: 400, error: `Disallowed topic: ${topic}`, link: 'https://docs.ntfy.sh' }, 400) as Response
     }
   }
 
@@ -562,14 +562,14 @@ async function handleDelete(c: any): Promise<Response> {
   await initDatabase(DB)
 
   if (!topic || !TOPIC_REGEX.test(topic)) {
-    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const existing = await DB.prepare('SELECT * FROM messages WHERE id = ? AND topic = ?')
     .bind(messageId, topic).first() as any | null
 
   if (!existing) {
-    return c.json({ code: 40401, http_code: 404, error: 'Message not found', link: 'https://ntfy.sh/docs' }, 404)
+    return c.json({ code: 40401, http_code: 404, error: 'Message not found', link: 'https://docs.ntfy.sh' }, 404)
   }
 
   const id = generateId()
@@ -616,13 +616,13 @@ async function handleTopicDelete(c: any): Promise<Response> {
   await initDatabase(DB)
 
   if (!topic || !TOPIC_REGEX.test(topic)) {
-    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const auth = await authenticate(c)
   const { write } = await checkTopicAccess(DB, auth.userId, topic)
   if (!write) {
-    return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://ntfy.sh/docs' }, 403)
+    return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://docs.ntfy.sh' }, 403)
   }
 
   await DB.prepare('DELETE FROM messages WHERE topic = ?').bind(topic).run()
@@ -653,13 +653,13 @@ async function handleMessageClear(c: any): Promise<Response> {
   await initDatabase(DB)
 
   if (!topic || !TOPIC_REGEX.test(topic)) {
-    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const auth = await authenticate(c)
   const { write } = await checkTopicAccess(DB, auth.userId, topic)
   if (!write) {
-    return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://ntfy.sh/docs' }, 403)
+    return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://docs.ntfy.sh' }, 403)
   }
 
   const existing = await DB.prepare('SELECT * FROM messages WHERE id = ? AND topic = ?')
@@ -707,7 +707,7 @@ async function handleAuth(c: any): Promise<Response> {
   await initDatabase(DB)
 
   if (!topic || !TOPIC_REGEX.test(topic)) {
-    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://ntfy.sh/docs' }, 400) as Response
+    return c.json({ code: 40001, http_code: 400, error: 'Invalid topic', link: 'https://docs.ntfy.sh' }, 400) as Response
   }
 
   const auth = await authenticate(c)

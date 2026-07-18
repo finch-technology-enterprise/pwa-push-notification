@@ -35,7 +35,7 @@ const fakeDb = () => {
   };
 };
 
-const baseUrl = "https://ntfy.sh";
+const baseUrl = "https://pwa-push-notification.finchtech-my.workers.dev";
 
 beforeEach(() => {
   vi.spyOn(console, "log").mockImplementation(() => {});
@@ -47,12 +47,12 @@ describe("SubscriptionManager.upsert", () => {
     const manager = new SubscriptionManager(db);
 
     await manager.upsert(baseUrl, "mytopic");
-    await manager.setMutedUntil("https://ntfy.sh/mytopic", 123);
+    await manager.setMutedUntil(`${baseUrl}/mytopic`, 123);
 
     const reservation = { topic: "mytopic", everyone: "deny-all" };
     await manager.upsert(baseUrl, "mytopic", { displayName: "My Topic", reservation });
 
-    const stored = db.rows.get("https://ntfy.sh/mytopic");
+    const stored = db.rows.get(`${baseUrl}/mytopic`);
     expect(stored.reservation).toEqual(reservation);
     expect(stored.displayName).toBe("My Topic");
     expect(stored.mutedUntil).toBe(123); // local-only state preserved
@@ -80,12 +80,12 @@ describe("SubscriptionManager.syncFromRemote", () => {
     // Topic was subscribed to before it was reserved, so it already exists locally without a
     // reservation -- exactly the state when a user clicks "Reserve topic" in the navbar.
     await manager.upsert(baseUrl, "mytopic");
-    expect(db.rows.get("https://ntfy.sh/mytopic").reservation).toBeFalsy();
+    expect(db.rows.get(`${baseUrl}/mytopic`).reservation).toBeFalsy();
 
     const reservation = { topic: "mytopic", everyone: "deny-all" };
     await manager.syncFromRemote([{ base_url: baseUrl, topic: "mytopic" }], [reservation]);
 
-    expect(db.rows.get("https://ntfy.sh/mytopic").reservation).toEqual(reservation);
+    expect(db.rows.get(`${baseUrl}/mytopic`).reservation).toEqual(reservation);
   });
 
   it("clears the reservation when the remote no longer reports one", async () => {
@@ -96,7 +96,7 @@ describe("SubscriptionManager.syncFromRemote", () => {
 
     await manager.syncFromRemote([{ base_url: baseUrl, topic: "mytopic" }], []);
 
-    expect(db.rows.get("https://ntfy.sh/mytopic").reservation).toBeNull();
+    expect(db.rows.get(`${baseUrl}/mytopic`).reservation).toBeNull();
   });
 
   it("updates the display name on an existing subscription", async () => {
@@ -106,6 +106,6 @@ describe("SubscriptionManager.syncFromRemote", () => {
     await manager.upsert(baseUrl, "mytopic");
     await manager.syncFromRemote([{ base_url: baseUrl, topic: "mytopic", display_name: "My Topic" }], []);
 
-    expect(db.rows.get("https://ntfy.sh/mytopic").displayName).toBe("My Topic");
+    expect(db.rows.get(`${baseUrl}/mytopic`).displayName).toBe("My Topic");
   });
 });

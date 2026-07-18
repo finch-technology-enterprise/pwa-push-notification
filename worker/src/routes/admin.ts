@@ -51,7 +51,7 @@ app.get('/users/:id', async (c) => {
 
   if (!user) {
     return c.json({
-      code: 40401, http_code: 404, error: 'User not found', link: 'https://ntfy.sh/docs',
+      code: 40401, http_code: 404, error: 'User not found', link: 'https://docs.ntfy.sh',
     }, 404)
   }
 
@@ -104,14 +104,14 @@ app.post('/users', async (c) => {
 
   if (!body.user || !body.password) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
   const existing = await DB.prepare('SELECT id FROM user WHERE user_name = ?').bind(body.user).first()
   if (existing) {
     return c.json({
-      code: 40901, http_code: 409, error: 'Username already taken', link: 'https://ntfy.sh/docs',
+      code: 40901, http_code: 409, error: 'Username already taken', link: 'https://docs.ntfy.sh',
     }, 409)
   }
 
@@ -140,7 +140,7 @@ app.delete('/users', async (c) => {
   const userId = c.req.query('user_id') || (await c.req.json().catch(() => ({}))).user_id
   if (!userId) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing user_id', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing user_id', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -163,7 +163,7 @@ app.put('/users/access', async (c) => {
 
   if (!body.user_id || !body.topic) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing user_id or topic', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing user_id or topic', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -190,7 +190,7 @@ app.delete('/users/access', async (c) => {
 
   if (!userId || !topic) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing user_id or topic', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing user_id or topic', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 

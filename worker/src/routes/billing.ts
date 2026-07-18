@@ -41,7 +41,7 @@ app.post('/account/billing/subscription', async (c) => {
     code: 40001,
     http_code: 400,
     error: 'Stripe billing is not configured. Contact the server administrator.',
-    link: 'https://ntfy.sh/docs',
+    link: 'https://docs.ntfy.sh',
   }, 400)
 })
 
@@ -54,7 +54,7 @@ app.put('/account/billing/subscription', async (c) => {
     code: 40001,
     http_code: 400,
     error: 'Stripe billing is not configured. Contact the server administrator.',
-    link: 'https://ntfy.sh/docs',
+    link: 'https://docs.ntfy.sh',
   }, 400)
 })
 
@@ -67,7 +67,7 @@ app.delete('/account/billing/subscription', async (c) => {
     code: 40001,
     http_code: 400,
     error: 'Stripe billing is not configured. Contact the server administrator.',
-    link: 'https://ntfy.sh/docs',
+    link: 'https://docs.ntfy.sh',
   }, 400)
 })
 
@@ -80,7 +80,7 @@ app.post('/account/billing/portal', async (c) => {
     code: 40001,
     http_code: 400,
     error: 'Stripe billing is not configured. Contact the server administrator.',
-    link: 'https://ntfy.sh/docs',
+    link: 'https://docs.ntfy.sh',
   }, 400)
 })
 

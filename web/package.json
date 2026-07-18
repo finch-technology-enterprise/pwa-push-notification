@@ -1,5 +1,5 @@
 {
-  "name": "@ntfy-cf/web",
+  "name": "pwa-push-web",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "serve": "vite preview",
-    "deploy": "wrangler pages deploy build --project-name ntfy-pwa-push --branch main",
+    "deploy": "wrangler pages deploy build --project-name pwa-push-web --branch main",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "lint": "echo ok",

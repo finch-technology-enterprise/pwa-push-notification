@@ -18,7 +18,7 @@ async function handleFileUpload(c: any): Promise<Response> {
 
   const topic = c.req.query('topic')
   if (!topic) {
-    return c.json({ code: 40001, http_code: 400, error: 'Missing topic query parameter', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Missing topic query parameter', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const auth = await authenticate(c)
@@ -30,12 +30,12 @@ async function handleFileUpload(c: any): Promise<Response> {
 
   const fileSizeLimit = parseInt(ATTACHMENT_FILE_SIZE_LIMIT || '10485760', 10)
   if (bodyBytes.length > fileSizeLimit) {
-    return c.json({ code: 40001, http_code: 400, error: `File exceeds ${fileSizeLimit} bytes`, link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: `File exceeds ${fileSizeLimit} bytes`, link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const totalResult = await checkAttachmentTotalLimit(DB, auth.userId, bodyBytes.length, ATTACHMENT_TOTAL_SIZE_LIMIT || '52428800')
   if (!totalResult.allowed) {
-    return c.json({ code: 40303, http_code: 403, error: totalResult.error!, link: 'https://ntfy.sh/docs' }, 403)
+    return c.json({ code: 40303, http_code: 403, error: totalResult.error!, link: 'https://docs.ntfy.sh' }, 403)
   }
 
   const contentType = bodyBlob.type || c.req.header('Content-Type') || 'application/octet-stream'
@@ -104,7 +104,7 @@ async function handleFileDownload(c: any): Promise<Response> {
 
   const obj = await ATTACHMENTS.get(`attachments/${id}/${filename}`)
   if (!obj) {
-    return c.json({ code: 40401, http_code: 404, error: 'File not found', link: 'https://ntfy.sh/docs' }, 404)
+    return c.json({ code: 40401, http_code: 404, error: 'File not found', link: 'https://docs.ntfy.sh' }, 404)
   }
 
   const topic = obj.customMetadata?.topic as string | undefined
@@ -113,7 +113,7 @@ async function handleFileDownload(c: any): Promise<Response> {
     const auth = await authenticate(c)
     const { read } = await checkTopicAccess(DB, auth.userId, topic)
     if (!read) {
-      return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://ntfy.sh/docs' }, 403)
+      return c.json({ code: 40302, http_code: 403, error: 'Access denied', link: 'https://docs.ntfy.sh' }, 403)
     }
   }
 

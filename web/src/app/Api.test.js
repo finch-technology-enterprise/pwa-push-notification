@@ -30,30 +30,30 @@ describe("Api.poll", () => {
     ].join("\n");
     fetchMock.mockResolvedValue(new Response(body));
 
-    const messages = await api.poll("https://ntfy.sh", "mytopic");
+    const messages = await api.poll("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic");
 
     expect(messages.map((m) => m.id)).toEqual(["1", "2"]);
   });
 
   it("uses the plain poll URL without a since cursor", async () => {
     fetchMock.mockResolvedValue(new Response(""));
-    await api.poll("https://ntfy.sh", "mytopic");
-    expect(fetchMock).toHaveBeenCalledWith("https://ntfy.sh/mytopic/json?poll=1", expect.anything());
+    await api.poll("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic");
+    expect(fetchMock).toHaveBeenCalledWith("https://pwa-push-notification.finchtech-my.workers.dev/mytopic/json?poll=1", expect.anything());
   });
 
   it("uses the since URL when a cursor is given", async () => {
     fetchMock.mockResolvedValue(new Response(""));
-    await api.poll("https://ntfy.sh", "mytopic", 12345);
-    expect(fetchMock).toHaveBeenCalledWith("https://ntfy.sh/mytopic/json?poll=1&since=12345", expect.anything());
+    await api.poll("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic", 12345);
+    expect(fetchMock).toHaveBeenCalledWith("https://pwa-push-notification.finchtech-my.workers.dev/mytopic/json?poll=1&since=12345", expect.anything());
   });
 });
 
 describe("Api.publish", () => {
   it("PUTs the message body to the base URL", async () => {
     fetchMock.mockResolvedValue({ status: 200 });
-    await api.publish("https://ntfy.sh", "mytopic", "Hello", { priority: 5, tags: ["warning"] });
+    await api.publish("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic", "Hello", { priority: 5, tags: ["warning"] });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://ntfy.sh",
+      "https://pwa-push-notification.finchtech-my.workers.dev",
       expect.objectContaining({
         method: "PUT",
         body: JSON.stringify({ topic: "mytopic", message: "Hello", priority: 5, tags: ["warning"] }),
@@ -64,7 +64,7 @@ describe("Api.publish", () => {
   it("attaches basic auth when the user has a password", async () => {
     userManager.get.mockResolvedValue({ username: "phil", password: "secret" });
     fetchMock.mockResolvedValue({ status: 200 });
-    await api.publish("https://ntfy.sh", "mytopic", "Hi");
+    await api.publish("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic", "Hi");
     const [, options] = fetchMock.mock.calls[0];
     expect(options.headers.Authorization).toBe(`Basic ${btoa("phil:secret")}`);
   });
@@ -72,7 +72,7 @@ describe("Api.publish", () => {
   it("attaches bearer auth when the user has a token", async () => {
     userManager.get.mockResolvedValue({ token: "tk_abc" });
     fetchMock.mockResolvedValue({ status: 200 });
-    await api.publish("https://ntfy.sh", "mytopic", "Hi");
+    await api.publish("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic", "Hi");
     const [, options] = fetchMock.mock.calls[0];
     expect(options.headers.Authorization).toBe("Bearer tk_abc");
   });
@@ -81,17 +81,17 @@ describe("Api.publish", () => {
 describe("Api.topicAuth", () => {
   it("returns true for a 2xx response", async () => {
     fetchMock.mockResolvedValue({ status: 200 });
-    expect(await api.topicAuth("https://ntfy.sh", "mytopic")).toBe(true);
+    expect(await api.topicAuth("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic")).toBe(true);
   });
 
   it("returns false for 401/403", async () => {
     fetchMock.mockResolvedValue({ status: 403 });
-    expect(await api.topicAuth("https://ntfy.sh", "mytopic")).toBe(false);
+    expect(await api.topicAuth("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic")).toBe(false);
   });
 
   it("throws for any other status", async () => {
     fetchMock.mockResolvedValue({ status: 500 });
-    await expect(api.topicAuth("https://ntfy.sh", "mytopic")).rejects.toThrow("Unexpected server response 500");
+    await expect(api.topicAuth("https://pwa-push-notification.finchtech-my.workers.dev", "mytopic")).rejects.toThrow("Unexpected server response 500");
   });
 });
 
@@ -105,7 +105,7 @@ describe("Api web push", () => {
     fetchMock.mockResolvedValue({ status: 200 });
     await api.updateWebPush(pushSubscription, ["topicA", "topicB"]);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://ntfy.sh/v1/webpush",
+      "https://pwa-push-notification.finchtech-my.workers.dev/v1/webpush",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ endpoint: "https://push.example/abc", auth: "AUTH", p256dh: "P256", topics: ["topicA", "topicB"] }),
@@ -117,7 +117,7 @@ describe("Api web push", () => {
     fetchMock.mockResolvedValue({ status: 200 });
     await api.deleteWebPush(pushSubscription);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://ntfy.sh/v1/webpush",
+      "https://pwa-push-notification.finchtech-my.workers.dev/v1/webpush",
       expect.objectContaining({
         method: "DELETE",
         body: JSON.stringify({ endpoint: "https://push.example/abc" }),

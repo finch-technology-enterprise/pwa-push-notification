@@ -31,7 +31,7 @@ import { TopicReservedError, UnauthorizedError } from "../app/errors";
 import { ReserveLimitChip } from "./SubscriptionPopup";
 import prefs from "../app/Prefs";
 
-const publicBaseUrl = "https://ntfy.sh";
+const publicBaseUrl = "https://pwa-push-notification.finchtech-my.workers.dev";
 
 export const subscribeTopic = async (baseUrl, topic, opts) => {
   const subscription = await subscriptionManager.upsert(baseUrl, topic, opts);

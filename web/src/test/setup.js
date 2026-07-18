@@ -2,10 +2,10 @@
 // Minimal browser-global stubs so the pure-logic and API modules import + run under the node
 // environment, without pulling in jsdom. utils.js -> config.js does `const { config } = window;`
 // at import time, and config.js falls back to window.location.origin when base_url is empty.
-const config = { base_url: "https://ntfy.sh", disallowed_topics: ["app", "account", "settings"] };
+const config = { base_url: "https://pwa-push-notification.finchtech-my.workers.dev", disallowed_topics: ["app", "account", "settings"] };
 
 globalThis.window = {
-  location: { origin: "https://ntfy.sh" },
+  location: { origin: "https://pwa-push-notification.finchtech-my.workers.dev" },
   config,
   atob: globalThis.atob, // urlB64ToUint8Array uses window.atob; Node provides global atob
 };

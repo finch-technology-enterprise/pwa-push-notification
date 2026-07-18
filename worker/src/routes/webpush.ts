@@ -24,7 +24,7 @@ app.post('/webpush', async (c) => {
       code: 40001,
       http_code: 400,
       error: 'Missing required fields: endpoint, key_auth, key_p256dh',
-      link: 'https://ntfy.sh/docs',
+      link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -36,7 +36,7 @@ app.post('/webpush', async (c) => {
       code: 40303,
       http_code: 403,
       error: subResult.error!,
-      link: 'https://ntfy.sh/docs',
+      link: 'https://docs.ntfy.sh',
     }, 403)
   }
 
@@ -97,7 +97,7 @@ app.put('/webpush', async (c) => {
 
   if (!subId) {
     return c.json({
-      code: 40401, http_code: 404, error: 'Subscription not found', link: 'https://ntfy.sh/docs',
+      code: 40401, http_code: 404, error: 'Subscription not found', link: 'https://docs.ntfy.sh',
     }, 404)
   }
 
@@ -129,7 +129,7 @@ app.delete('/webpush', async (c) => {
       code: 40001,
       http_code: 400,
       error: 'Missing endpoint or id parameter',
-      link: 'https://ntfy.sh/docs',
+      link: 'https://docs.ntfy.sh',
     }, 400)
   }
 

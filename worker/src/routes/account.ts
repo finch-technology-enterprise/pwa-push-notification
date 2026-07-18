@@ -17,7 +17,7 @@ app.post('/account', async (c) => {
 
   if (ENABLE_SIGNUP === 'false') {
     return c.json({
-      code: 40301, http_code: 403, error: 'Sign-up is disabled', link: 'https://ntfy.sh/docs',
+      code: 40301, http_code: 403, error: 'Sign-up is disabled', link: 'https://docs.ntfy.sh',
     }, 403)
   }
 
@@ -25,26 +25,26 @@ app.post('/account', async (c) => {
   const username = body.user || body.username
   if (!username || !body.password) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
   if (username.length < 3 || username.length > 64) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Username must be between 3 and 64 characters', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Username must be between 3 and 64 characters', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
   if (body.password.length < 6) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Password must be at least 6 characters', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Password must be at least 6 characters', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
   const existing = await DB.prepare('SELECT id FROM user WHERE user_name = ?').bind(username).first()
   if (existing) {
     return c.json({
-      code: 40901, http_code: 409, error: 'Username already taken', link: 'https://ntfy.sh/docs',
+      code: 40901, http_code: 409, error: 'Username already taken', link: 'https://docs.ntfy.sh',
     }, 409)
   }
 
@@ -85,7 +85,7 @@ app.get('/account', async (c) => {
 
   if (!user) {
     return c.json({
-      code: 40401, http_code: 404, error: 'User not found', link: 'https://ntfy.sh/docs',
+      code: 40401, http_code: 404, error: 'User not found', link: 'https://docs.ntfy.sh',
     }, 404)
   }
 
@@ -127,14 +127,14 @@ app.post('/account/login', async (c) => {
   const rateCheck = await checkAuthRateLimit(DB, ip)
   if (!rateCheck.allowed) {
     return c.json({
-      code: 42901, http_code: 429, error: 'Too many login attempts. Try again later.', link: 'https://ntfy.sh/docs',
+      code: 42901, http_code: 429, error: 'Too many login attempts. Try again later.', link: 'https://docs.ntfy.sh',
     }, 429)
   }
 
   const authHeader = c.req.header('authorization') || c.req.header('Authorization')
   if (!authHeader || !authHeader.startsWith('Basic ')) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing Basic auth header', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing Basic auth header', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -142,7 +142,7 @@ app.post('/account/login', async (c) => {
   const colonIdx = decoded.indexOf(':')
   if (colonIdx === -1) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Invalid auth format', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Invalid auth format', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -151,7 +151,7 @@ app.post('/account/login', async (c) => {
 
   if (!loginUser || !loginPass) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -162,7 +162,7 @@ app.post('/account/login', async (c) => {
   if (!user) {
     await recordAuthFailure(DB, ip)
     return c.json({
-      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://ntfy.sh/docs',
+      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://docs.ntfy.sh',
     }, 401)
   }
 
@@ -170,7 +170,7 @@ app.post('/account/login', async (c) => {
   if (!valid) {
     await recordAuthFailure(DB, ip)
     return c.json({
-      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://ntfy.sh/docs',
+      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://docs.ntfy.sh',
     }, 401)
   }
 
@@ -200,7 +200,7 @@ app.post('/account/token', async (c) => {
   const rateCheck = await checkAuthRateLimit(DB, ip)
   if (!rateCheck.allowed) {
     return c.json({
-      code: 42901, http_code: 429, error: 'Too many login attempts. Try again later.', link: 'https://ntfy.sh/docs',
+      code: 42901, http_code: 429, error: 'Too many login attempts. Try again later.', link: 'https://docs.ntfy.sh',
     }, 429)
   }
 
@@ -232,7 +232,7 @@ app.post('/account/token', async (c) => {
 
   if (!loginUser || !loginPass) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing user or password', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -243,7 +243,7 @@ app.post('/account/token', async (c) => {
   if (!user) {
     await recordAuthFailure(DB, ip)
     return c.json({
-      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://ntfy.sh/docs',
+      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://docs.ntfy.sh',
     }, 401)
   }
 
@@ -251,7 +251,7 @@ app.post('/account/token', async (c) => {
   if (!valid) {
     await recordAuthFailure(DB, ip)
     return c.json({
-      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://ntfy.sh/docs',
+      code: 40101, http_code: 401, error: 'Invalid credentials', link: 'https://docs.ntfy.sh',
     }, 401)
   }
 
@@ -323,27 +323,27 @@ app.post('/account/password', async (c) => {
 
   if (!body.current_password || !body.new_password) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing current_password or new_password', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing current_password or new_password', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
   if (body.new_password.length < 6) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Password must be at least 6 characters', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Password must be at least 6 characters', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
   const user = await DB.prepare('SELECT pass FROM user WHERE id = ?').bind(auth.userId).first<{ pass: string }>()
   if (!user) {
     return c.json({
-      code: 40401, http_code: 404, error: 'User not found', link: 'https://ntfy.sh/docs',
+      code: 40401, http_code: 404, error: 'User not found', link: 'https://docs.ntfy.sh',
     }, 404)
   }
 
   const valid = await verifyPassword(body.current_password, user.pass)
   if (!valid) {
     return c.json({
-      code: 40101, http_code: 401, error: 'Current password is incorrect', link: 'https://ntfy.sh/docs',
+      code: 40101, http_code: 401, error: 'Current password is incorrect', link: 'https://docs.ntfy.sh',
     }, 401)
   }
 
@@ -363,7 +363,7 @@ app.patch('/account/settings', async (c) => {
   const user = await DB.prepare('SELECT prefs, sync_topic FROM user WHERE id = ?').bind(auth.userId).first<{ prefs: string; sync_topic: string }>()
   if (!user) {
     return c.json({
-      code: 40401, http_code: 404, error: 'User not found', link: 'https://ntfy.sh/docs',
+      code: 40401, http_code: 404, error: 'User not found', link: 'https://docs.ntfy.sh',
     }, 404)
   }
 
@@ -389,7 +389,7 @@ app.post('/account/subscription', async (c) => {
   const body = await c.req.json<{ topic: string; base_url?: string }>()
   if (!body.topic) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -408,7 +408,7 @@ app.patch('/account/subscription', async (c) => {
   const body = await c.req.json<{ topic: string; read?: boolean; write?: boolean }>()
   if (!body.topic) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -417,7 +417,7 @@ app.patch('/account/subscription', async (c) => {
 
   if (read === undefined && write === undefined) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Nothing to update', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Nothing to update', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -427,7 +427,7 @@ app.patch('/account/subscription', async (c) => {
 
   if (!existing) {
     return c.json({
-      code: 40401, http_code: 404, error: 'Subscription not found', link: 'https://ntfy.sh/docs',
+      code: 40401, http_code: 404, error: 'Subscription not found', link: 'https://docs.ntfy.sh',
     }, 404)
   }
 
@@ -463,7 +463,7 @@ app.post('/account/reservation', async (c) => {
   const body = await c.req.json<{ topic: string }>()
   if (!body.topic) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -473,7 +473,7 @@ app.post('/account/reservation', async (c) => {
 
   if (existing) {
     return c.json({
-      code: 40901, http_code: 409, error: 'Topic already reserved', link: 'https://ntfy.sh/docs',
+      code: 40901, http_code: 409, error: 'Topic already reserved', link: 'https://docs.ntfy.sh',
     }, 409)
   }
 
@@ -494,7 +494,7 @@ app.delete('/account/reservation', async (c) => {
   const topic = c.req.query('topic') || (await c.req.json().catch(() => ({}))).topic
   if (!topic) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing topic', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -513,7 +513,7 @@ app.put('/account/phone', async (c) => {
   const body = await c.req.json<{ phone_number: string }>()
   if (!body.phone_number) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing phone_number', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing phone_number', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -531,7 +531,7 @@ app.delete('/account/phone', async (c) => {
   const phoneNumber = c.req.query('phone_number') || (await c.req.json().catch(() => ({}))).phone_number
   if (!phoneNumber) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing phone_number', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing phone_number', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -549,7 +549,7 @@ app.put('/account/email', async (c) => {
   const body = await c.req.json<{ email: string }>()
   if (!body.email) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing email', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing email', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -571,7 +571,7 @@ app.delete('/account/email', async (c) => {
   const email = c.req.query('email') || (await c.req.json().catch(() => ({}))).email
   if (!email) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing email', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing email', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -588,7 +588,7 @@ app.post('/account/email/resend', async (c) => {
 
   const body = await c.req.json<{ email: string }>().catch(() => ({ email: '' }))
   if (!body.email) {
-    return c.json({ code: 40001, http_code: 400, error: 'Missing email', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Missing email', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const emailRow = await DB.prepare(
@@ -596,7 +596,7 @@ app.post('/account/email/resend', async (c) => {
   ).bind(auth.userId, body.email).first<{ email: string }>()
 
   if (!emailRow) {
-    return c.json({ code: 40001, http_code: 400, error: 'Email not found', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Email not found', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const rawToken = await generateToken()
@@ -620,7 +620,7 @@ app.post('/account/email/primary', async (c) => {
 
   const body = await c.req.json<{ email: string }>().catch(() => ({ email: '' }))
   if (!body.email) {
-    return c.json({ code: 40001, http_code: 400, error: 'Missing email', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Missing email', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const emailRow = await DB.prepare(
@@ -628,7 +628,7 @@ app.post('/account/email/primary', async (c) => {
   ).bind(auth.userId, body.email).first<{ is_primary: number }>()
 
   if (!emailRow) {
-    return c.json({ code: 40001, http_code: 400, error: 'Email not found', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Email not found', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   await DB.prepare('UPDATE user_email SET is_primary = 0 WHERE user_id = ?').bind(auth.userId).run()
@@ -652,7 +652,7 @@ app.post('/account/email/verify', async (c) => {
 
   const emailAddresses = (emails.results || []).map((r: any) => r.email)
   if (emailAddresses.length === 0) {
-    return c.json({ code: 40001, http_code: 400, error: 'No email addresses on file', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'No email addresses on file', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const rawToken = await generateToken()
@@ -687,7 +687,7 @@ app.post('/account/password/reset/request', async (c) => {
   const body = await c.req.json<{ username: string }>()
   if (!body.username) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing username', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing username', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -727,13 +727,13 @@ app.post('/account/password/reset', async (c) => {
   const body = await c.req.json<{ token: string; password: string }>()
   if (!body.token || !body.password) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Missing token or password', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Missing token or password', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
   if (body.password.length < 6) {
     return c.json({
-      code: 40001, http_code: 400, error: 'Password must be at least 6 characters', link: 'https://ntfy.sh/docs',
+      code: 40001, http_code: 400, error: 'Password must be at least 6 characters', link: 'https://docs.ntfy.sh',
     }, 400)
   }
 
@@ -746,7 +746,7 @@ app.post('/account/password/reset', async (c) => {
 
   if (!link) {
     return c.json({
-      code: 40101, http_code: 401, error: 'Invalid or expired token', link: 'https://ntfy.sh/docs',
+      code: 40101, http_code: 401, error: 'Invalid or expired token', link: 'https://docs.ntfy.sh',
     }, 401)
   }
 
@@ -765,7 +765,7 @@ app.post('/account/fcm', async (c) => {
   const body = await c.req.json<{ token: string; topics: string[] }>().catch(() => ({ token: '', topics: [] }))
 
   if (!body.token) {
-    return c.json({ code: 40001, http_code: 400, error: 'Missing FCM token', link: 'https://ntfy.sh/docs' }, 400)
+    return c.json({ code: 40001, http_code: 400, error: 'Missing FCM token', link: 'https://docs.ntfy.sh' }, 400)
   }
 
   const ip = c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for') || 'unknown'
