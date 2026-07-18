@@ -56,12 +56,12 @@ export const SubscriptionPopup = (props) => {
   const placement = props.placement ?? "left";
   const reservations = account?.reservations || [];
 
-  const showReservationAdd = config.enable_reservations && !subscription?.reservation && account?.stats.reservations_remaining > 0;
+  const showReservationAdd = config.enable_reservations && !subscription?.reservation && account?.stats?.reservations_remaining > 0;
   const showReservationAddDisabled =
     !showReservationAdd &&
     config.enable_reservations &&
     !subscription?.reservation &&
-    (config.enable_payments || account?.stats.reservations_remaining === 0);
+    (config.enable_payments || account?.stats?.reservations_remaining === 0);
   const showReservationEdit = config.enable_reservations && !!subscription?.reservation;
   const showReservationDelete = config.enable_reservations && !!subscription?.reservation;
 
@@ -355,11 +355,11 @@ const DisplayNameDialog = (props) => {
 
 export const ReserveLimitChip = () => {
   const { account } = useContext(AccountContext);
-  if (account?.role === Role.ADMIN || account?.stats.reservations_remaining > 0) {
+  if (account?.role === Role.ADMIN || account?.stats?.reservations_remaining > 0) {
     return <></>;
   }
   if (config.enable_payments) {
-    return account?.limits.reservations > 0 ? <LimitReachedChip /> : <ProChip />;
+    return account?.limits?.reservations > 0 ? <LimitReachedChip /> : <ProChip />;
   }
   if (account) {
     return <LimitReachedChip />;

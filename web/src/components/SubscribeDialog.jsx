@@ -97,7 +97,7 @@ const SubscribePage = (props) => {
   );
   const showReserveTopicCheckbox = config.enable_reservations && !anotherServerVisible && (config.enable_payments || account);
   const reserveTopicEnabled =
-    session.exists() && (account?.role === Role.ADMIN || (account?.role === Role.USER && (account?.stats.reservations_remaining || 0) > 0));
+    session.exists() && (account?.role === Role.ADMIN || (account?.role === Role.USER && (account?.stats?.reservations_remaining || 0) > 0));
 
   const webPushEnabled = useLiveQuery(() => prefs.webPushEnabled());
 

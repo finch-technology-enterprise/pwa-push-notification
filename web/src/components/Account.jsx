@@ -434,7 +434,7 @@ const Emails = () => {
     return null;
   }
 
-  if (account?.limits.emails === 0) {
+  if (account?.limits?.emails === 0) {
     return (
       <Pref
         title={
@@ -660,7 +660,7 @@ const PhoneNumbers = () => {
     return null;
   }
 
-  if (account?.limits.calls === 0) {
+  if (account?.limits?.calls === 0) {
     return (
       <Pref
         title={
