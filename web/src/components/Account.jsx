@@ -844,6 +844,9 @@ const Stats = () => {
     return <></>;
   }
 
+  // Backend may not return limits/stats; provide defaults so the UI doesn't crash.
+  const limits = account.limits || {};
+  const stats = account.stats || {};
   const normalize = (value, max) => Math.min((value / max) * 100, 100);
 
   return (
@@ -852,16 +855,16 @@ const Stats = () => {
         {t("account_usage_title")}
       </Typography>
       <PrefGroup>
-        {(account.role === Role.ADMIN || account.limits.reservations > 0) && (
+        {(account.role === Role.ADMIN || (limits.reservations || 0) > 0) && (
           <Pref title={t("account_usage_reservations_title")}>
             <div>
               <Typography variant="body2" sx={{ float: "left" }}>
-                {account.stats.reservations.toLocaleString()}
+                {(stats.reservations || 0).toLocaleString()}
               </Typography>
               <Typography variant="body2" sx={{ float: "right" }}>
                 {account.role === Role.USER
                   ? t("account_usage_of_limit", {
-                      limit: account.limits.reservations.toLocaleString(),
+                      limit: (limits.reservations || 0).toLocaleString(),
                     })
                   : t("account_usage_unlimited")}
               </Typography>
@@ -869,8 +872,8 @@ const Stats = () => {
             <LinearProgress
               variant="determinate"
               value={
-                account.role === Role.USER && account.limits.reservations > 0
-                  ? normalize(account.stats.reservations, account.limits.reservations)
+                account.role === Role.USER && (limits.reservations || 0) > 0
+                  ? normalize(stats.reservations || 0, limits.reservations || 0)
                   : 100
               }
             />
@@ -890,19 +893,19 @@ const Stats = () => {
         >
           <div>
             <Typography variant="body2" sx={{ float: "left" }}>
-              {account.stats.messages.toLocaleString()}
+              {(stats.messages || 0).toLocaleString()}
             </Typography>
             <Typography variant="body2" sx={{ float: "right" }}>
               {account.role === Role.USER
                 ? t("account_usage_of_limit", {
-                    limit: account.limits.messages.toLocaleString(),
+                    limit: (limits.messages || 0).toLocaleString(),
                   })
                 : t("account_usage_unlimited")}
             </Typography>
           </div>
           <LinearProgress
             variant="determinate"
-            value={account.role === Role.USER ? normalize(account.stats.messages, account.limits.messages) : 100}
+            value={account.role === Role.USER ? normalize(stats.messages || 0, limits.messages || 0) : 100}
           />
         </Pref>
         {config.enable_emails && (
@@ -920,23 +923,23 @@ const Stats = () => {
           >
             <div>
               <Typography variant="body2" sx={{ float: "left" }}>
-                {account.stats.emails.toLocaleString()}
+                {(stats.emails || 0).toLocaleString()}
               </Typography>
               <Typography variant="body2" sx={{ float: "right" }}>
                 {account.role === Role.USER
                   ? t("account_usage_of_limit", {
-                      limit: account.limits.emails.toLocaleString(),
+                      limit: (limits.emails || 0).toLocaleString(),
                     })
                   : t("account_usage_unlimited")}
               </Typography>
             </div>
             <LinearProgress
               variant="determinate"
-              value={account.role === Role.USER ? normalize(account.stats.emails, account.limits.emails) : 100}
+              value={account.role === Role.USER ? normalize(stats.emails || 0, limits.emails || 0) : 100}
             />
           </Pref>
         )}
-        {config.enable_calls && (account.role === Role.ADMIN || account.limits.calls > 0) && (
+        {config.enable_calls && (account.role === Role.ADMIN || (limits.calls || 0) > 0) && (
           <Pref
             title={
               <>
@@ -951,19 +954,19 @@ const Stats = () => {
           >
             <div>
               <Typography variant="body2" sx={{ float: "left" }}>
-                {account.stats.calls.toLocaleString()}
+                {(stats.calls || 0).toLocaleString()}
               </Typography>
               <Typography variant="body2" sx={{ float: "right" }}>
                 {account.role === Role.USER
                   ? t("account_usage_of_limit", {
-                      limit: account.limits.calls.toLocaleString(),
+                      limit: (limits.calls || 0).toLocaleString(),
                     })
                   : t("account_usage_unlimited")}
               </Typography>
             </div>
             <LinearProgress
               variant="determinate"
-              value={account.role === Role.USER && account.limits.calls > 0 ? normalize(account.stats.calls, account.limits.calls) : 100}
+              value={account.role === Role.USER && (limits.calls || 0) > 0 ? normalize(stats.calls || 0, limits.calls || 0) : 100}
             />
           </Pref>
         )}
@@ -971,28 +974,28 @@ const Stats = () => {
           alignTop
           title={t("account_usage_attachment_storage_title")}
           description={t("account_usage_attachment_storage_description", {
-            filesize: formatBytes(account.limits.attachment_file_size),
-            expiry: formatShortDuration(account.limits.attachment_expiry_duration * 1000, i18n.resolvedLanguage),
+            filesize: formatBytes(limits.attachment_file_size),
+            expiry: formatShortDuration((limits.attachment_expiry_duration || 0) * 1000, i18n.resolvedLanguage),
           })}
         >
           <div>
             <Typography variant="body2" sx={{ float: "left" }}>
-              {formatBytes(account.stats.attachment_total_size)}
+              {formatBytes(stats.attachment_total_size || 0)}
             </Typography>
             <Typography variant="body2" sx={{ float: "right" }}>
               {account.role === Role.USER
                 ? t("account_usage_of_limit", {
-                    limit: formatBytes(account.limits.attachment_total_size),
+                    limit: formatBytes(limits.attachment_total_size || 0),
                   })
                 : t("account_usage_unlimited")}
             </Typography>
           </div>
           <LinearProgress
             variant="determinate"
-            value={account.role === Role.USER ? normalize(account.stats.attachment_total_size, account.limits.attachment_total_size) : 100}
+            value={account.role === Role.USER ? normalize(stats.attachment_total_size || 0, limits.attachment_total_size || 0) : 100}
           />
         </Pref>
-        {config.enable_reservations && account.role === Role.USER && account.limits.reservations === 0 && (
+        {config.enable_reservations && account.role === Role.USER && (limits.reservations || 0) === 0 && (
           <Pref
             title={
               <>
@@ -1004,7 +1007,7 @@ const Stats = () => {
             <em>{t("account_usage_reservations_none")}</em>
           </Pref>
         )}
-        {config.enable_calls && account.role === Role.USER && account.limits.calls === 0 && (
+        {config.enable_calls && account.role === Role.USER && (limits.calls || 0) === 0 && (
           <Pref
             title={
               <>
@@ -1017,7 +1020,7 @@ const Stats = () => {
           </Pref>
         )}
       </PrefGroup>
-      {account.role === Role.USER && account.limits.basis === LimitBasis.IP && (
+      {account.role === Role.USER && limits.basis === LimitBasis.IP && (
         <Typography variant="body1" sx={{ pt: 3 }}>
           {t("account_usage_basis_ip_description")}
         </Typography>
